@@ -8,7 +8,7 @@ En Render, abre el servicio Node y ve a **Settings > Environment**. Añade las v
 
 Para TLS, descarga el certificado CA desde el proveedor y agrégalo al proyecto en una ubicación estable, por ejemplo `backend/certs/database-ca.pem`. Define `DB_CA_PATH` con esa ruta dentro del servicio, por ejemplo `./certs/database-ca.pem` (se resuelve desde el directorio de ejecución). Si el proveedor solo requiere TLS sin CA personalizada, deja `DB_CA_PATH` vacío y usa `DB_SSL=true`.
 
-El backend puede guardar las fotos en Cloudinary usando `CLOUDINARY_URL`, o en disco local usando `UPLOADS_DIR`. En Render Free, el disco local es temporal y las fotos se pierden al reiniciar o desplegar; configura Cloudinary o un disco persistente para conservarlas. Guarda `CLOUDINARY_URL` solo como variable privada en el backend. El servidor firma y envía las fotos a Cloudinary; nunca expone el secreto al navegador.
+El backend puede guardar las fotos en Cloudinary usando `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` y `CLOUDINARY_API_SECRET`, o en disco local usando `UPLOADS_DIR`. En Render Free, el disco local es temporal y las fotos se pierden al reiniciar o desplegar; configura Cloudinary o un disco persistente para conservarlas. Guarda las tres variables de Cloudinary solo en el entorno privado del backend. El servidor firma y envía las fotos a Cloudinary; nunca expone el secreto al navegador.
 
 En el entorno del backend configura `ADMIN_PASSWORD` y `ADMIN_SESSION_SECRET` con valores largos y únicos. Configura `FRONTEND_URL` con la URL pública del Static Site. El panel `/admin` y sus rutas para productos, gastos, métricas y pedidos requerirán iniciar sesión; la tienda y el envío de pedidos seguirán siendo públicos.
 

@@ -24,19 +24,31 @@ const imageExtensions = {
   'image/webp': '.webp'
 };
 const MAX_IMAGE_SIZE_MB = 20;
-const cloudinaryCredentials = process.env.CLOUDINARY_URL
-  ? (() => {
-      const cloudinaryUrl = new URL(process.env.CLOUDINARY_URL);
-      if (cloudinaryUrl.protocol !== 'cloudinary:' || !cloudinaryUrl.hostname || !cloudinaryUrl.username || !cloudinaryUrl.password) {
-        throw new Error('CLOUDINARY_URL no tiene el formato cloudinary://API_KEY:API_SECRET@CLOUD_NAME.');
-      }
+function getCloudinaryCredentials() {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  if (cloudName && apiKey && apiSecret) return { cloudName, apiKey, apiSecret };
+
+  const cloudinaryUrlValue = process.env.CLOUDINARY_URL;
+  if (!cloudinaryUrlValue) return null;
+  try {
+    const cloudinaryUrl = new URL(cloudinaryUrlValue);
+    if (cloudinaryUrl.protocol === 'cloudinary:' && cloudinaryUrl.hostname && cloudinaryUrl.username && cloudinaryUrl.password) {
       return {
         cloudName: cloudinaryUrl.hostname,
         apiKey: decodeURIComponent(cloudinaryUrl.username),
         apiSecret: decodeURIComponent(cloudinaryUrl.password)
       };
-    })()
-  : null;
+    }
+  } catch {
+    // Ignore malformed URLs; the warning below explains the supported variables.
+  }
+  console.warn('Cloudinary no está configurado: usa CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY y CLOUDINARY_API_SECRET, o una CLOUDINARY_URL completa.');
+  return null;
+}
+
+const cloudinaryCredentials = getCloudinaryCredentials();
 if (!cloudinaryCredentials) mkdirSync(uploadsDirectory, { recursive: true });
 const upload = multer({
   storage: cloudinaryCredentials ? multer.memoryStorage() : multer.diskStorage({
