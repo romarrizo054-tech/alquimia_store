@@ -36,6 +36,7 @@ export default function AdminDashboard({ onBackToStore }) {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [dataError, setDataError] = useState('');
 
   // Formulario de Producto
   const [isEditing, setIsEditing] = useState(false);
@@ -71,11 +72,29 @@ export default function AdminDashboard({ onBackToStore }) {
         fetch(apiUrl('/api/admin/metrics'))
       ]);
 
-      if (prodRes.ok) setProducts(await prodRes.json());
-      if (catRes.ok) setCategories(await catRes.json());
-      if (metRes.ok) setMetrics(await metRes.json());
+      const errors = [];
+      if (prodRes.ok) {
+        setProducts(await prodRes.json());
+      } else {
+        const error = await prodRes.json().catch(() => ({}));
+        errors.push(`Productos: ${error.error || prodRes.statusText}`);
+      }
+      if (catRes.ok) {
+        setCategories(await catRes.json());
+      } else {
+        const error = await catRes.json().catch(() => ({}));
+        errors.push(`Categorías: ${error.error || catRes.statusText}`);
+      }
+      if (metRes.ok) {
+        setMetrics(await metRes.json());
+      } else {
+        const error = await metRes.json().catch(() => ({}));
+        errors.push(`Métricas: ${error.error || metRes.statusText}`);
+      }
+      setDataError(errors.join(' · '));
     } catch (err) {
-      console.warn('No se pudieron cargar los datos del backend. Se muestran valores en cero.');
+      setDataError(err.message || 'No se pudo conectar con el backend.');
+      console.warn('No se pudieron cargar los datos del backend.', err);
     } finally {
       setIsLoading(false);
     }
@@ -140,7 +159,7 @@ export default function AdminDashboard({ onBackToStore }) {
 
       alert(isEditing ? '¡Producto actualizado!' : '¡Producto agregado con éxito!');
       resetProductForm();
-      loadData();
+      await loadData();
     } catch (err) {
       alert('No se pudo conectar con el servidor.');
     }
@@ -576,6 +595,11 @@ export default function AdminDashboard({ onBackToStore }) {
 
         {/* Tabla de Inventario y Control de Stock */}
         <div className="bg-white rounded-2xl border border-purple-100 shadow-sm overflow-hidden">
+          {dataError && (
+            <div className="border-b border-rose-200 bg-rose-50 px-5 py-3 text-sm text-rose-800">
+              No se pudieron cargar todos los datos: {dataError}
+            </div>
+          )}
           <div className="p-5 border-b border-purple-100 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold text-purple-950">

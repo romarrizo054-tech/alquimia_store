@@ -84,7 +84,10 @@ function ensureProductImagesTable() {
 }
 
 function uploadedImageUrls(req) {
-  return (req.files || []).map((file) => `${req.protocol}://${req.get('host')}/uploads/${file.filename}`);
+  const files = Array.isArray(req.files)
+    ? req.files
+    : Object.values(req.files || {}).flat();
+  return files.map((file) => `${req.protocol}://${req.get('host')}/uploads/${file.filename}`);
 }
 
 // Endpoint para traer categorías
@@ -144,7 +147,12 @@ app.get('/api/products', async (req, res) => {
 // ==========================================
 
 // Crear producto
-app.post('/api/products', upload.array('images', 10), async (req, res) => {
+const productImageUpload = upload.fields([
+  { name: 'images', maxCount: 10 },
+  { name: 'image', maxCount: 1 },
+]);
+
+app.post('/api/products', productImageUpload, async (req, res) => {
   const { category_id, name, description, price, cost_price, stock } = req.body;
   const images = uploadedImageUrls(req);
   const image_url = images[0] || req.body.image_url;
@@ -168,7 +176,7 @@ app.post('/api/products', upload.array('images', 10), async (req, res) => {
 });
 
 // Modificar producto
-app.put('/api/products/:id', upload.array('images', 10), async (req, res) => {
+app.put('/api/products/:id', productImageUpload, async (req, res) => {
   const { id } = req.params;
   const { category_id, name, description, price, cost_price, stock, is_active } = req.body;
   const images = uploadedImageUrls(req);
