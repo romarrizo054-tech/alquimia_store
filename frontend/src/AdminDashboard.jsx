@@ -19,18 +19,18 @@ import { apiUrl } from './api';
 export default function AdminDashboard({ onBackToStore }) {
   const navigate = useNavigate();
   
-    const [metrics, setMetrics] = useState({
-    revenue: 105800,
-    costOfGoods: 53900,
-    grossProfit: 51900,
-    expenses: 31500,
-    netProfit: 20400,
-    profitMargin: 19.3,
-    totalOrders: 3,
-    inventoryCostValue: 145000,
-    inventoryRetailValue: 290000,
-    totalProducts: 6,
-    lowStockCount: 1
+  const [metrics, setMetrics] = useState({
+    revenue: 0,
+    costOfGoods: 0,
+    grossProfit: 0,
+    expenses: 0,
+    netProfit: 0,
+    profitMargin: 0,
+    totalOrders: 0,
+    inventoryCostValue: 0,
+    inventoryRetailValue: 0,
+    totalProducts: 0,
+    lowStockCount: 0
   });
 
   const [products, setProducts] = useState([]);
@@ -74,7 +74,7 @@ export default function AdminDashboard({ onBackToStore }) {
       if (catRes.ok) setCategories(await catRes.json());
       if (metRes.ok) setMetrics(await metRes.json());
     } catch (err) {
-      console.warn('Operando en modo demostración local o backend desconectado.');
+      console.warn('No se pudieron cargar los datos del backend. Se muestran valores en cero.');
     } finally {
       setIsLoading(false);
     }
