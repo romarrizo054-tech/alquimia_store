@@ -222,6 +222,7 @@ export default function StoreView() {
   const [cart, setCart] = useState([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [buyerName, setBuyerName] = useState('');
   const [deliveryMethod, setDeliveryMethod] = useState('Envío a Domicilio');
   const [notes, setNotes] = useState('');
@@ -287,30 +288,59 @@ export default function StoreView() {
     return matchesCategory && matchesSearch;
   });
 
-  const handleCheckoutWhatsApp = () => {
+  const handleCheckoutWhatsApp = async () => {
     if (!buyerName.trim()) {
       alert('Por favor ingresa tu nombre antes de confirmar.');
       return;
     }
 
-    let message = `¡Hola, Alquimia Beauty's! ✨💜\n\n`;
-    message += `Quisiera realizar este pedido:\n`;
-    message += `━━━━━━━━━━━━━━━━━━\n`;
-    message += `👤 *Nombre:* ${buyerName.trim()}\n`;
-    message += `📦 *Entrega:* ${deliveryMethod}\n\n`;
-    message += `🛍️ *MI PEDIDO*\n`;
+    if (!cart.length || isSubmittingOrder) return;
+    setIsSubmittingOrder(true);
+    const whatsappWindow = window.open('about:blank', '_blank');
 
-    cart.forEach((item) => {
-      const subtotal = (item.price * item.quantity).toLocaleString('es-AR');
-      message += `▫️ ${item.name} × ${item.quantity} — $${subtotal}\n`;
-    });
+    try {
+      const response = await fetch(apiUrl('/api/orders'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_name: buyerName.trim(),
+          delivery_method: deliveryMethod,
+          notes: notes.trim(),
+          items: cart.map((item) => ({ product_id: item.id, quantity: item.quantity }))
+        })
+      });
+      const order = await response.json();
+      if (!response.ok) throw new Error(order.error || 'No se pudo registrar el pedido.');
 
-    message += `━━━━━━━━━━━━━━━━━━\n`;
-    message += `💰 *TOTAL: $${totalCart.toLocaleString('es-AR')} ARS*\n\n`;
-    message += `¿Me cuentan cuáles son los medios de pago y coordinamos la entrega? 😊\n`;
-    message += `¡Muchas gracias! ✨`;
+      let message = `¡Hola, Alquimia Beauty's! ✨💜\n\n`;
+      message += `Quisiera realizar este pedido:\n`;
+      message += `━━━━━━━━━━━━━━━━━━\n`;
+      message += `🧾 *Pedido #${order.id}*\n`;
+      message += `👤 *Nombre:* ${buyerName.trim()}\n`;
+      message += `📦 *Entrega:* ${deliveryMethod}\n\n`;
+      message += `🛍️ *MI PEDIDO*\n`;
 
-    window.open(`https://wa.me/${WHATSAPP_PHONE}?text=${encodeURIComponent(message)}`, '_blank');
+      order.items.forEach((item) => {
+        const subtotal = Number(item.subtotal).toLocaleString('es-AR');
+        message += `▫️ ${item.name} × ${item.quantity} — $${subtotal}\n`;
+      });
+
+      message += `━━━━━━━━━━━━━━━━━━\n`;
+      message += `💰 *TOTAL: $${Number(order.total).toLocaleString('es-AR')} ARS*\n`;
+      if (notes.trim()) message += `📝 *Detalles:* ${notes.trim()}\n`;
+      message += `\n`;
+      message += `¿Me cuentan cuáles son los medios de pago y coordinamos la entrega? 😊\n`;
+      message += `¡Muchas gracias! ✨`;
+
+      const whatsappUrl = `https://wa.me/${WHATSAPP_PHONE}?text=${encodeURIComponent(message)}`;
+      if (whatsappWindow) whatsappWindow.location.href = whatsappUrl;
+      else window.location.href = whatsappUrl;
+    } catch (error) {
+      whatsappWindow?.close();
+      alert(error.message || 'No se pudo registrar el pedido. Inténtalo nuevamente.');
+    } finally {
+      setIsSubmittingOrder(false);
+    }
   };
 
   return (
@@ -575,6 +605,13 @@ export default function StoreView() {
                   <option value="Envío a Domicilio">Envío a Domicilio</option>
                   <option value="Retiro en Punto de Entrega">Retiro en Punto de Entrega</option>
                 </select>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder={deliveryMethod === 'Envío a Domicilio' ? 'Dirección, barrio y referencia (opcional)' : 'Algún detalle para el pedido (opcional)'}
+                  rows={2}
+                  className="w-full resize-none rounded-lg border border-purple-200 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-purple-500"
+                />
 
                 <div className="flex justify-between items-center pt-2">
                   <span className="text-sm font-semibold text-purple-900">Total:</span>
@@ -585,10 +622,11 @@ export default function StoreView() {
 
                 <button
                   onClick={handleCheckoutWhatsApp}
+                  disabled={isSubmittingOrder}
                   className="w-full bg-[#25D366] hover:bg-[#20ba59] text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2 shadow-sm transition-all"
                 >
                   <MessageCircle className="w-5 h-5 fill-current" />
-                  Comprar por WhatsApp
+                  {isSubmittingOrder ? 'Registrando pedido…' : 'Comprar por WhatsApp'}
                 </button>
               </div>
             )}

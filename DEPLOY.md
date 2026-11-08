@@ -8,7 +8,11 @@ En Render, abre el servicio Node y ve a **Settings > Environment**. Añade las v
 
 Para TLS, descarga el certificado CA desde el proveedor y agrégalo al proyecto en una ubicación estable, por ejemplo `backend/certs/database-ca.pem`. Define `DB_CA_PATH` con esa ruta dentro del servicio, por ejemplo `./certs/database-ca.pem` (se resuelve desde el directorio de ejecución). Si el proveedor solo requiere TLS sin CA personalizada, deja `DB_CA_PATH` vacío y usa `DB_SSL=true`.
 
-Las fotos cargadas se guardan en el disco del backend. Para conservarlas entre despliegues, configura `UPLOADS_DIR` para que apunte al directorio de un disco persistente de Render (por ejemplo `/var/data/uploads`, con un disco montado en `/var/data`). Sin almacenamiento persistente, Render elimina los archivos cargados cuando el servicio se reinicia o despliega.
+El backend puede guardar las fotos en Cloudinary usando `CLOUDINARY_URL`, o en disco local usando `UPLOADS_DIR`. En Render Free, el disco local es temporal y las fotos se pierden al reiniciar o desplegar; configura Cloudinary o un disco persistente para conservarlas. Guarda `CLOUDINARY_URL` solo como variable privada en el backend. El servidor firma y envía las fotos a Cloudinary; nunca expone el secreto al navegador.
+
+En el entorno del backend configura `ADMIN_PASSWORD` y `ADMIN_SESSION_SECRET` con valores largos y únicos. Configura `FRONTEND_URL` con la URL pública del Static Site. El panel `/admin` y sus rutas para productos, gastos, métricas y pedidos requerirán iniciar sesión; la tienda y el envío de pedidos seguirán siendo públicos.
+
+Para guardar pedidos, el backend crea la tabla `store_orders` automáticamente. Los pedidos nuevos se guardan como `pendiente`; al marcarlos `completado` en el panel, se incluyen en las métricas y se descuentan del stock. El total se calcula con precios leídos de la base de datos.
 
 Configura el directorio raíz del servicio como `backend` si Render despliega desde un monorepo. El comando de inicio debe ejecutar `node server.js`; instala dependencias con `npm install`.
 

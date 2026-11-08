@@ -11,7 +11,10 @@ import {
   CheckCircle, 
   RefreshCw, 
   Sparkles,
-  ArrowLeft
+  ArrowLeft,
+  LockKeyhole,
+  LogOut,
+  CheckCircle2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiUrl } from './api';
@@ -24,13 +27,19 @@ async function readApiJson(response, label) {
 
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(`${label}: ${data.error || response.statusText}`);
+    const error = new Error(`${label}: ${data.error || response.statusText}`);
+    error.status = response.status;
+    throw error;
   }
   return data;
 }
 
 export default function AdminDashboard({ onBackToStore }) {
   const navigate = useNavigate();
+  const [authStatus, setAuthStatus] = useState('checking');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [orders, setOrders] = useState([]);
   
   const [metrics, setMetrics] = useState({
     revenue: 0,
@@ -79,16 +88,18 @@ export default function AdminDashboard({ onBackToStore }) {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [prodRes, catRes, metRes] = await Promise.all([
-        fetch(apiUrl('/api/products')),
-        fetch(apiUrl('/api/categories')),
-        fetch(apiUrl('/api/admin/metrics'))
+      const [prodRes, catRes, metRes, ordersRes] = await Promise.all([
+        fetch(apiUrl('/api/products'), { credentials: 'include' }),
+        fetch(apiUrl('/api/categories'), { credentials: 'include' }),
+        fetch(apiUrl('/api/admin/metrics'), { credentials: 'include' }),
+        fetch(apiUrl('/api/admin/orders'), { credentials: 'include' })
       ]);
 
       const results = await Promise.allSettled([
         readApiJson(prodRes, 'Productos'),
         readApiJson(catRes, 'Categorías'),
-        readApiJson(metRes, 'Métricas')
+        readApiJson(metRes, 'Métricas'),
+        readApiJson(ordersRes, 'Pedidos')
       ]);
       const errors = [];
       if (results[0].status === 'fulfilled') setProducts(results[0].value);
@@ -97,6 +108,11 @@ export default function AdminDashboard({ onBackToStore }) {
       else errors.push(results[1].reason.message);
       if (results[2].status === 'fulfilled') setMetrics(results[2].value);
       else errors.push(results[2].reason.message);
+      if (results[3].status === 'fulfilled') setOrders(results[3].value);
+      else errors.push(results[3].reason.message);
+      if (results.some((result) => result.status === 'rejected' && result.reason.status === 401)) {
+        setAuthStatus('anonymous');
+      }
       setDataError(errors.join(' · '));
     } catch (err) {
       setDataError(err.message || 'No se pudo conectar con el backend.');
@@ -107,7 +123,31 @@ export default function AdminDashboard({ onBackToStore }) {
   };
 
   useEffect(() => {
-    loadData();
+    let cancelled = false;
+    fetch(apiUrl('/api/admin/session'), { credentials: 'include' })
+      .then(async (response) => {
+        const session = await response.json();
+        if (!response.ok) throw new Error(session.error || 'No se pudo comprobar la sesión.');
+        if (cancelled) return;
+        if (!session.configured) {
+          setLoginError('El administrador todavía no configuró la contraseña en Render.');
+          setAuthStatus('anonymous');
+          return;
+        }
+        if (session.authenticated) {
+          setAuthStatus('authenticated');
+          loadData();
+        } else {
+          setAuthStatus('anonymous');
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setLoginError(error.message);
+          setAuthStatus('anonymous');
+        }
+      });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => () => {
@@ -154,6 +194,7 @@ export default function AdminDashboard({ onBackToStore }) {
 
       const res = await fetch(endpoint, {
         method,
+        credentials: 'include',
         body: formData
       });
 
@@ -179,6 +220,7 @@ export default function AdminDashboard({ onBackToStore }) {
     try {
       const res = await fetch(apiUrl('/api/admin/expenses'), {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(expenseForm)
       });
@@ -228,7 +270,7 @@ export default function AdminDashboard({ onBackToStore }) {
   const deleteProduct = async (id) => {
     if (!window.confirm('¿Seguro que deseas eliminar este producto?')) return;
     try {
-      const res = await fetch(apiUrl(`/api/products/${id}`), { method: 'DELETE' });
+      const res = await fetch(apiUrl(`/api/products/${id}`), { method: 'DELETE', credentials: 'include' });
       if (!res.ok) {
         const result = await res.json();
         alert(result.error || 'No se pudo eliminar el producto.');
@@ -241,6 +283,94 @@ export default function AdminDashboard({ onBackToStore }) {
       alert(err.message || 'No se pudo conectar con el servidor para eliminar el producto.');
     }
   };
+
+  const handleLogin = async (event) => {
+    event.preventDefault();
+    setLoginError('');
+    try {
+      const response = await fetch(apiUrl('/api/admin/login'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: loginPassword })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'No se pudo iniciar sesión.');
+      setLoginPassword('');
+      setAuthStatus('authenticated');
+      await loadData();
+    } catch (error) {
+      setLoginError(error.message || 'No se pudo conectar con el servidor.');
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch(apiUrl('/api/admin/logout'), { method: 'POST', credentials: 'include' });
+    } finally {
+      setProducts([]);
+      setOrders([]);
+      setAuthStatus('anonymous');
+      setLoginError('');
+    }
+  };
+
+  const updateOrderStatus = async (orderId, status) => {
+    try {
+      const response = await fetch(apiUrl(`/api/admin/orders/${orderId}/status`), {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'No se pudo actualizar el pedido.');
+      await loadData();
+    } catch (error) {
+      alert(error.message || 'No se pudo actualizar el pedido.');
+    }
+  };
+
+  if (authStatus === 'checking') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#faf5ff] text-purple-800">
+        Comprobando acceso al panel…
+      </div>
+    );
+  }
+
+  if (authStatus !== 'authenticated') {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#faf5ff] p-4 text-purple-950">
+        <form onSubmit={handleLogin} className="w-full max-w-sm rounded-2xl border border-purple-100 bg-white p-7 shadow-lg">
+          <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-100 text-purple-700">
+            <LockKeyhole className="h-6 w-6" />
+          </div>
+          <h1 className="text-2xl font-bold font-serif">Administración</h1>
+          <p className="mt-1 text-sm text-purple-600">Ingresa tu contraseña para continuar.</p>
+          <label htmlFor="admin-password" className="mt-6 block text-sm font-semibold text-purple-900">
+            Contraseña
+          </label>
+          <input
+            id="admin-password"
+            type="password"
+            autoComplete="current-password"
+            required
+            value={loginPassword}
+            onChange={(event) => setLoginPassword(event.target.value)}
+            className="mt-2 w-full rounded-xl border border-purple-200 px-4 py-3 outline-none focus:ring-2 focus:ring-purple-400"
+          />
+          {loginError && <p className="mt-3 text-sm text-rose-700">{loginError}</p>}
+          <button type="submit" className="mt-5 w-full rounded-xl bg-purple-700 py-3 font-semibold text-white hover:bg-purple-800">
+            Entrar al panel
+          </button>
+          <button type="button" onClick={() => navigate('/')} className="mt-3 w-full py-2 text-sm text-purple-700 hover:underline">
+            Volver a la tienda
+          </button>
+        </form>
+      </main>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#faf5ff] text-[#2e1065] p-4 sm:p-8 font-sans">
@@ -269,6 +399,14 @@ export default function AdminDashboard({ onBackToStore }) {
               title="Actualizar datos"
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 rounded-xl border border-purple-200 bg-white px-3 py-2.5 text-sm font-semibold text-purple-700 transition hover:bg-purple-100"
+              title="Cerrar sesión"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Salir</span>
             </button>
             {onBackToStore && (
               <button
@@ -602,6 +740,67 @@ export default function AdminDashboard({ onBackToStore }) {
             </div>
           </div>
         </div>
+
+        {/* Pedidos iniciados por WhatsApp */}
+        <section className="overflow-hidden rounded-2xl border border-purple-100 bg-white shadow-sm">
+          <div className="border-b border-purple-100 p-5">
+            <h2 className="text-lg font-bold text-purple-950">Pedidos de WhatsApp ({orders.length})</h2>
+            <p className="text-xs text-purple-600">Los pedidos se guardan como pendientes; marca completados cuando confirmes el pago.</p>
+          </div>
+          {orders.length === 0 ? (
+            <p className="p-5 text-sm text-purple-500">Todavía no hay pedidos registrados.</p>
+          ) : (
+            <div className="divide-y divide-purple-100">
+              {orders.map((order) => (
+                <article key={order.id} className="flex flex-col gap-4 p-5 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-bold text-purple-950">Pedido #{order.id} · {order.customer_name}</h3>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                        order.status === 'pendiente' ? 'bg-amber-100 text-amber-800' :
+                          order.status === 'completado' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-700'
+                      }`}>
+                        {order.status}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-purple-500">
+                      {new Date(order.created_at).toLocaleString('es-AR')} · {order.delivery_method}
+                    </p>
+                    <ul className="mt-3 space-y-1 text-sm text-purple-800">
+                      {order.items.map((item, index) => (
+                        <li key={`${item.product_id}-${index}`}>
+                          {item.name} × {item.quantity} — ${Number(item.subtotal).toLocaleString('es-AR')}
+                        </li>
+                      ))}
+                    </ul>
+                    {order.notes && <p className="mt-2 text-sm text-purple-600">Nota: {order.notes}</p>}
+                  </div>
+                  <div className="flex shrink-0 flex-col items-start gap-3 lg:items-end">
+                    <span className="text-lg font-bold text-purple-950">${Number(order.total).toLocaleString('es-AR')}</span>
+                    {order.status === 'pendiente' && (
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => updateOrderStatus(order.id, 'completado')}
+                          className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+                        >
+                          <CheckCircle2 className="h-4 w-4" /> Marcar completado
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateOrderStatus(order.id, 'cancelado')}
+                          className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
 
         {/* Tabla de Inventario y Control de Stock */}
         <div className="bg-white rounded-2xl border border-purple-100 shadow-sm overflow-hidden">
