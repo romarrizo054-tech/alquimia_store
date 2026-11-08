@@ -1,0 +1,666 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  DollarSign, 
+  TrendingUp, 
+  TrendingDown, 
+  Package, 
+  AlertTriangle, 
+  Plus, 
+  Trash2, 
+  Edit3, 
+  CheckCircle, 
+  RefreshCw, 
+  Sparkles,
+  ArrowLeft
+} from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+
+export default function AdminDashboard({ onBackToStore }) {
+  const navigate = useNavigate();
+  
+    const [metrics, setMetrics] = useState({
+    revenue: 105800,
+    costOfGoods: 53900,
+    grossProfit: 51900,
+    expenses: 31500,
+    netProfit: 20400,
+    profitMargin: 19.3,
+    totalOrders: 3,
+    inventoryCostValue: 145000,
+    inventoryRetailValue: 290000,
+    totalProducts: 6,
+    lowStockCount: 1
+  });
+
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Formulario de Producto
+  const [isEditing, setIsEditing] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
+  const imageInputRef = useRef(null);
+  const imagePreviewUrlRef = useRef('');
+  const [productForm, setProductForm] = useState({
+    name: '',
+    category_id: 1,
+    description: '',
+    price: '',
+    cost_price: '',
+    stock: 10,
+    image_url: ''
+  });
+
+  // Formulario rápido de Gastos
+  const [expenseForm, setExpenseForm] = useState({
+    concept: '',
+    category: 'Packaging',
+    amount: ''
+  });
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const [prodRes, catRes, metRes] = await Promise.all([
+        fetch('http://localhost:4000/api/products'),
+        fetch('http://localhost:4000/api/categories'),
+        fetch('http://localhost:4000/api/admin/metrics')
+      ]);
+
+      if (prodRes.ok) setProducts(await prodRes.json());
+      if (catRes.ok) setCategories(await catRes.json());
+      if (metRes.ok) setMetrics(await metRes.json());
+    } catch (err) {
+      console.warn('Operando en modo demostración local o backend desconectado.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  useEffect(() => () => {
+    if (imagePreviewUrlRef.current) URL.revokeObjectURL(imagePreviewUrlRef.current);
+  }, []);
+
+  const handleImageChange = (e) => {
+    if (imagePreviewUrlRef.current) URL.revokeObjectURL(imagePreviewUrlRef.current);
+    const file = e.target.files?.[0] || null;
+    const previewUrl = file ? URL.createObjectURL(file) : '';
+    imagePreviewUrlRef.current = previewUrl;
+    setSelectedImage(file);
+    setImagePreview(previewUrl);
+  };
+
+  const clearSelectedImage = () => {
+    if (imagePreviewUrlRef.current) URL.revokeObjectURL(imagePreviewUrlRef.current);
+    imagePreviewUrlRef.current = '';
+    setSelectedImage(null);
+    setImagePreview('');
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  };
+
+  // Guardar o Editar Producto
+  const handleSubmitProduct = async (e) => {
+    e.preventDefault();
+    if (!productForm.name || !productForm.price || (!productForm.image_url && !selectedImage)) {
+      alert('Por favor completa el nombre, el precio y selecciona una foto.');
+      return;
+    }
+
+    try {
+      const method = isEditing ? 'PUT' : 'POST';
+      const endpoint = isEditing 
+        ? `http://localhost:4000/api/products/${editId}`
+        : 'http://localhost:4000/api/products';
+      const formData = new FormData();
+      Object.entries(productForm).forEach(([key, value]) => formData.append(key, value));
+      if (selectedImage) formData.append('image', selectedImage);
+
+      const res = await fetch(endpoint, {
+        method,
+        body: formData
+      });
+
+      if (!res.ok) {
+        const result = await res.json();
+        alert(result.error || 'No se pudo guardar el producto.');
+        return;
+      }
+
+      alert(isEditing ? '¡Producto actualizado!' : '¡Producto agregado con éxito!');
+      resetProductForm();
+      loadData();
+    } catch (err) {
+      alert('No se pudo conectar con el servidor.');
+    }
+  };
+
+  // Registrar un Gasto Operativo
+  const handleSubmitExpense = async (e) => {
+    e.preventDefault();
+    if (!expenseForm.concept || !expenseForm.amount) return;
+
+    try {
+      const res = await fetch('http://localhost:4000/api/admin/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(expenseForm)
+      });
+
+      if (res.ok) {
+        alert('Gasto registrado con éxito');
+        setExpenseForm({ concept: '', category: 'Packaging', amount: '' });
+        loadData();
+      }
+    } catch (err) {
+      alert('Error registrando el gasto.');
+    }
+  };
+
+  const startEditProduct = (prod) => {
+    setIsEditing(true);
+    setEditId(prod.id);
+    setProductForm({
+      name: prod.name,
+      category_id: prod.category_id || 1,
+      description: prod.description || '',
+      price: prod.price,
+      cost_price: prod.cost_price || 0,
+      stock: prod.stock,
+      image_url: prod.image_url
+    });
+    clearSelectedImage();
+    window.scrollTo({ top: 350, behavior: 'smooth' });
+  };
+
+  const resetProductForm = () => {
+    setIsEditing(false);
+    setEditId(null);
+    clearSelectedImage();
+    setProductForm({
+      name: '',
+      category_id: categories[0]?.id || 1,
+      description: '',
+      price: '',
+      cost_price: '',
+      stock: 10,
+      image_url: ''
+    });
+  };
+
+  const deleteProduct = async (id) => {
+    if (!window.confirm('¿Seguro que deseas eliminar este producto?')) return;
+    try {
+      const res = await fetch(`http://localhost:4000/api/products/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setProducts((prev) => prev.filter((p) => p.id !== id));
+        loadData();
+      }
+    } catch (err) {
+      alert('Error eliminando producto.');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#faf5ff] text-[#2e1065] p-4 sm:p-8 font-sans">
+      <div className="max-w-6xl mx-auto space-y-8">
+        
+        {/* Encabezado */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-purple-200 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-purple-600 text-white rounded-2xl shadow-sm">
+              <Sparkles className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold font-serif text-purple-950">
+                Alquimia Beauty's • Administración
+              </h1>
+              <p className="text-xs text-purple-600">
+                Control de Stock, Finanzas, Gastos y Catálogo
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={loadData}
+              className="p-2.5 bg-white border border-purple-200 rounded-xl hover:bg-purple-100 text-purple-700 transition"
+              title="Actualizar datos"
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
+            {onBackToStore && (
+              <button
+  onClick={() => navigate('/')}
+  className="flex items-center gap-2 px-4 py-2.5 bg-purple-100 hover:bg-purple-200 text-purple-900 rounded-xl text-sm font-semibold transition"
+>
+  <ArrowLeft className="w-4 h-4" />
+  Ir a la Tienda
+</button>
+            )}
+          </div>
+        </div>
+
+        {/* Tarjetas de Métricas Financieras */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Ingresos Totales */}
+          <div className="bg-white p-5 rounded-2xl border border-purple-100 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-purple-600">
+                Ingresos (Ventas)
+              </span>
+              <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-2xl font-bold text-purple-950">
+              ${Number(metrics.revenue).toLocaleString('es-AR')}
+            </div>
+            <p className="text-xs text-purple-500 mt-1">{metrics.totalOrders} pedidos cerrados</p>
+          </div>
+
+          {/* Gastos Totales */}
+          <div className="bg-white p-5 rounded-2xl border border-purple-100 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-purple-600">
+                Gastos Operativos
+              </span>
+              <div className="p-2 bg-rose-100 text-rose-700 rounded-xl">
+                <TrendingDown className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-2xl font-bold text-purple-950">
+              ${Number(metrics.expenses).toLocaleString('es-AR')}
+            </div>
+            <p className="text-xs text-purple-500 mt-1">Packaging, envíos, difusión</p>
+          </div>
+
+          {/* Ganancia Neta Real */}
+          <div className="bg-white p-5 rounded-2xl border border-purple-200 shadow-sm bg-gradient-to-br from-white to-purple-50/60">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-purple-700">
+                Ganancia Neta Real
+              </span>
+              <div className="p-2 bg-purple-600 text-white rounded-xl">
+                <DollarSign className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-2xl font-bold text-purple-950">
+              ${Number(metrics.netProfit).toLocaleString('es-AR')}
+            </div>
+            <div className="flex items-center gap-1.5 mt-1">
+              <span className="text-xs px-2 py-0.5 bg-purple-200 text-purple-900 rounded-md font-semibold">
+                Margen: {metrics.profitMargin}%
+              </span>
+            </div>
+          </div>
+
+          {/* Valor de Inventario */}
+          <div className="bg-white p-5 rounded-2xl border border-purple-100 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-purple-600">
+                Capital en Mercadería
+              </span>
+              <div className="p-2 bg-amber-100 text-amber-700 rounded-xl">
+                <Package className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-2xl font-bold text-purple-950">
+              ${Number(metrics.inventoryCostValue).toLocaleString('es-AR')}
+            </div>
+            <p className="text-xs text-purple-500 mt-1">
+              Valor de venta: ${Number(metrics.inventoryRetailValue).toLocaleString('es-AR')}
+            </p>
+          </div>
+        </div>
+
+        {/* Sección Dividida: Formulario de Carga y Registro de Gastos */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* Formulario de Producto (2 Columnas) */}
+          <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-purple-100 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-purple-950 flex items-center gap-2">
+                {isEditing ? <Edit3 className="w-5 h-5 text-purple-600" /> : <Plus className="w-5 h-5 text-purple-600" />}
+                {isEditing ? 'Editar Producto' : 'Cargar Nuevo Producto'}
+              </h2>
+              {isEditing && (
+                <button
+                  onClick={resetProductForm}
+                  className="text-xs text-purple-600 hover:underline font-semibold"
+                >
+                  Cancelar Edición
+                </button>
+              )}
+            </div>
+
+            <form onSubmit={handleSubmitProduct} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-purple-800 mb-1">
+                    Nombre del Producto *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej. Body Mist Rosa Silvestre 100ml"
+                    value={productForm.name}
+                    onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
+                    className="w-full text-sm px-3.5 py-2 rounded-xl bg-purple-50/50 border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-purple-800 mb-1">
+                    Rubro / Categoría *
+                  </label>
+                  <select
+                    value={productForm.category_id}
+                    onChange={(e) => setProductForm({ ...productForm, category_id: e.target.value })}
+                    className="w-full text-sm px-3.5 py-2 rounded-xl bg-purple-50/50 border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400 text-purple-950"
+                  >
+                    {categories.length > 0 ? (
+                      categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="1">Perfumes</option>
+                        <option value="2">Maquillaje</option>
+                        <option value="3">Uñas & Manicura</option>
+                        <option value="4">Cuidado Facial</option>
+                        <option value="5">Accesorios</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-purple-800 mb-1">
+                  Descripción Corta
+                </label>
+                <input
+                  type="text"
+                  placeholder="Detalles, notas olfativas o acabados..."
+                  value={productForm.description}
+                  onChange={(e) => setProductForm({ ...productForm, description: e.target.value })}
+                  className="w-full text-sm px-3.5 py-2 rounded-xl bg-purple-50/50 border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-purple-800 mb-1">
+                    Costo de Proveedor ($)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={productForm.cost_price}
+                    onChange={(e) => setProductForm({ ...productForm, cost_price: e.target.value })}
+                    className="w-full text-sm px-3.5 py-2 rounded-xl bg-purple-50/50 border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-purple-800 mb-1">
+                    Precio de Venta ($) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    placeholder="0.00"
+                    value={productForm.price}
+                    onChange={(e) => setProductForm({ ...productForm, price: e.target.value })}
+                    className="w-full text-sm px-3.5 py-2 rounded-xl bg-purple-50/50 border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-purple-800 mb-1">
+                    Stock Disponible
+                  </label>
+                  <input
+                    type="number"
+                    value={productForm.stock}
+                    onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })}
+                    className="w-full text-sm px-3.5 py-2 rounded-xl bg-purple-50/50 border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-purple-800 mb-1">
+                  Foto del producto {isEditing ? '' : '*'}
+                </label>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  required={!isEditing && !productForm.image_url}
+                  ref={imageInputRef}
+                  onChange={handleImageChange}
+                  className="w-full text-sm px-3.5 py-2 rounded-xl bg-purple-50/50 border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400 file:mr-3 file:rounded-lg file:border-0 file:bg-purple-100 file:px-3 file:py-1.5 file:text-purple-800"
+                />
+                <p className="mt-1 text-xs text-purple-500">
+                  Elegí una imagen JPG, PNG o WebP de hasta 5 MB.
+                  {isEditing && ' Si no seleccionas otra, se conserva la foto actual.'}
+                </p>
+                {(imagePreview || (isEditing && productForm.image_url)) && (
+                  <img
+                    src={imagePreview || productForm.image_url}
+                    alt="Vista previa del producto"
+                    className="mt-3 h-24 w-24 rounded-xl border border-purple-200 object-cover"
+                  />
+                )}
+              </div>
+
+              {/* Cálculo automático de Ganancia por Unidad */}
+              {productForm.price > 0 && (
+                <div className="p-3 bg-purple-50 rounded-xl text-xs flex justify-between items-center text-purple-900 font-medium">
+                  <span>Ganancia estimada por unidad vendida:</span>
+                  <span className="font-bold text-sm text-purple-950">
+                    ${(Number(productForm.price) - Number(productForm.cost_price || 0)).toLocaleString('es-AR')}
+                    {productForm.price > 0 && productForm.cost_price > 0 && (
+                      <span className="ml-1 text-purple-700">
+                        ({(((productForm.price - productForm.cost_price) / productForm.price) * 100).toFixed(0)}% margen)
+                      </span>
+                    )}
+                  </span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="w-full bg-purple-700 hover:bg-purple-800 text-white font-semibold py-2.5 rounded-xl text-sm transition-all shadow-sm"
+              >
+                {isEditing ? 'Guardar Cambios del Producto' : 'Publicar Producto en Catálogo'}
+              </button>
+            </form>
+          </div>
+
+          {/* Registro Rápido de Gastos (1 Columna) */}
+          <div className="bg-white p-6 rounded-2xl border border-purple-100 shadow-sm flex flex-col justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-purple-950 mb-3 flex items-center gap-2">
+                <TrendingDown className="w-5 h-5 text-rose-500" />
+                Anotar Gasto del Negocio
+              </h2>
+              <p className="text-xs text-purple-600 mb-4">
+                Lleva el control de packaging, viáticos o materiales para saber la ganancia neta exacta.
+              </p>
+
+              <form onSubmit={handleSubmitExpense} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-purple-800 mb-1">
+                    Concepto
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej. Cintas lila, bolsas, envíos..."
+                    value={expenseForm.concept}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, concept: e.target.value })}
+                    className="w-full text-sm px-3.5 py-2 rounded-xl bg-purple-50/50 border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-purple-800 mb-1">
+                    Rubro de Gasto
+                  </label>
+                  <select
+                    value={expenseForm.category}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
+                    className="w-full text-sm px-3.5 py-2 rounded-xl bg-purple-50/50 border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400 text-purple-950"
+                  >
+                    <option value="Packaging">Packaging & Bolsas</option>
+                    <option value="Envíos">Envíos / Cadetería</option>
+                    <option value="Insumos">Insumos & Materiales</option>
+                    <option value="Publicidad">Publicidad / Difusión</option>
+                    <option value="Otros">Otros</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-purple-800 mb-1">
+                    Monto Gastado ($)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    placeholder="0.00"
+                    value={expenseForm.amount}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                    className="w-full text-sm px-3.5 py-2 rounded-xl bg-purple-50/50 border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold py-2 rounded-xl text-sm transition"
+                >
+                  Registrar Gasto
+                </button>
+              </form>
+            </div>
+
+            <div className="mt-6 p-3 bg-purple-50 rounded-xl text-xs text-purple-700">
+              💡 <strong>Regla administrativa:</strong> Los gastos se descuentan automáticamente de la ganancia bruta para darte el balance neto real.
+            </div>
+          </div>
+        </div>
+
+        {/* Tabla de Inventario y Control de Stock */}
+        <div className="bg-white rounded-2xl border border-purple-100 shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-purple-100 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-purple-950">
+                Inventario Activo ({products.length} productos)
+              </h2>
+              <p className="text-xs text-purple-600">
+                Supervisa stock disponible, costos y márgenes de cada artículo.
+              </p>
+            </div>
+            {metrics.lowStockCount > 0 && (
+              <span className="flex items-center gap-1.5 text-xs bg-amber-100 text-amber-800 px-3 py-1.5 rounded-full font-semibold">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                {metrics.lowStockCount} con stock bajo
+              </span>
+            )}
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-purple-50/60 text-purple-900 text-xs font-semibold uppercase">
+                <tr>
+                  <th className="p-4">Producto</th>
+                  <th className="p-4">Categoría</th>
+                  <th className="p-4">Costo</th>
+                  <th className="p-4">Precio Venta</th>
+                  <th className="p-4">Ganancia Unit.</th>
+                  <th className="p-4">Stock</th>
+                  <th className="p-4 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-purple-100">
+                {products.map((p) => {
+                  const unitGain = Number(p.price) - Number(p.cost_price || 0);
+                  const isLow = Number(p.stock) <= 3;
+
+                  return (
+                    <tr key={p.id} className="hover:bg-purple-50/30 transition">
+                      <td className="p-4 flex items-center gap-3">
+                        <img
+                          src={p.image_url}
+                          alt={p.name}
+                          className="w-10 h-10 rounded-lg object-cover bg-purple-100"
+                        />
+                        <div>
+                          <div className="font-semibold text-purple-950">{p.name}</div>
+                          <div className="text-xs text-purple-500 line-clamp-1">{p.description}</div>
+                        </div>
+                      </td>
+                      <td className="p-4 text-purple-800 text-xs">
+                        {p.category_name || 'General'}
+                      </td>
+                      <td className="p-4 text-purple-700">
+                        ${Number(p.cost_price || 0).toLocaleString('es-AR')}
+                      </td>
+                      <td className="p-4 font-bold text-purple-950">
+                        ${Number(p.price).toLocaleString('es-AR')}
+                      </td>
+                      <td className="p-4">
+                        <span className="text-emerald-700 font-semibold">
+                          +${unitGain.toLocaleString('es-AR')}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
+                            isLow
+                              ? 'bg-rose-100 text-rose-700'
+                              : 'bg-emerald-100 text-emerald-700'
+                          }`}
+                        >
+                          {p.stock} un.
+                        </span>
+                      </td>
+                      <td className="p-4 text-right space-x-2">
+                        <button
+                          onClick={() => startEditProduct(p)}
+                          className="p-1.5 text-purple-600 hover:bg-purple-100 rounded-lg transition"
+                          title="Editar"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => deleteProduct(p)}
+                          className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                          title="Eliminar"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
