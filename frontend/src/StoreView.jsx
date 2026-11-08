@@ -10,7 +10,8 @@ import {
   Sparkles, 
   MessageCircle,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Eye
 } from 'lucide-react';
 const WHATSAPP_PHONE = '5493834964896'; // Tu número de WhatsApp sin el +
 
@@ -27,45 +28,188 @@ function ProductImageGallery({ product }) {
   const activeImage = images[activeIndex] || images[0];
 
   return (
-    <div className="relative aspect-square overflow-hidden bg-purple-50">
-      {activeImage && (
-        <img
-          src={activeImage}
-          alt={`${product.name}${images.length > 1 ? ` - foto ${activeIndex + 1}` : ''}`}
-          className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
-        />
-      )}
-      {images.length > 1 && (
-        <>
-          <button
-            type="button"
-            onClick={() => setActiveIndex((index) => (index - 1 + images.length) % images.length)}
-            aria-label="Ver foto anterior"
-            className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1.5 text-purple-800 shadow hover:bg-white"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveIndex((index) => (index + 1) % images.length)}
-            aria-label="Ver foto siguiente"
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1.5 text-purple-800 shadow hover:bg-white"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-          <span className="absolute bottom-2 right-2 rounded-full bg-white/90 px-2 py-1 text-xs font-medium text-purple-800">
-            {activeIndex + 1} / {images.length}
-          </span>
-        </>
-      )}
-      <span className="absolute top-2 left-2 bg-white/90 backdrop-blur-sm text-purple-800 text-xs px-2.5 py-1 rounded-full font-medium">
-        {product.category_name}
-      </span>
-      {Number(product.stock) <= 0 && product.stock !== null && product.stock !== undefined && product.stock !== '' && (
-        <span className="absolute top-2 right-2 bg-red-600 text-white text-xs px-2.5 py-1 rounded-full font-semibold">
-          Sin stock
+    <>
+      <div className="relative aspect-square overflow-hidden bg-purple-50">
+        {activeImage && (
+          <img
+            src={activeImage}
+            alt={`${product.name}${images.length > 1 ? ` - foto ${activeIndex + 1}` : ''}`}
+            className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+          />
+        )}
+        {images.length > 1 && (
+          <>
+            <button
+              type="button"
+              onClick={() => setActiveIndex((index) => (index - 1 + images.length) % images.length)}
+              aria-label="Ver foto anterior"
+              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1.5 text-purple-800 shadow hover:bg-white"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveIndex((index) => (index + 1) % images.length)}
+              aria-label="Ver foto siguiente"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1.5 text-purple-800 shadow hover:bg-white"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+            <span className="absolute bottom-2 right-2 rounded-full bg-white/90 px-2 py-1 text-xs font-medium text-purple-800">
+              {activeIndex + 1} / {images.length}
+            </span>
+          </>
+        )}
+        <span className="absolute top-2 left-2 bg-white/90 backdrop-blur-sm text-purple-800 text-xs px-2.5 py-1 rounded-full font-medium">
+          {product.category_name}
         </span>
+        {Number(product.stock) <= 0 && product.stock !== null && product.stock !== undefined && product.stock !== '' && (
+          <span className="absolute top-2 right-2 bg-red-600 text-white text-xs px-2.5 py-1 rounded-full font-semibold">
+            Sin stock
+          </span>
+        )}
+      </div>
+      {images.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto border-b border-purple-100 bg-white px-3 py-2">
+          {images.map((image, index) => (
+            <button
+              key={`${image}-${index}`}
+              type="button"
+              onClick={() => setActiveIndex(index)}
+              aria-label={`Mostrar foto ${index + 1} de ${product.name}`}
+              aria-pressed={activeIndex === index}
+              className={`h-12 w-12 shrink-0 overflow-hidden rounded-lg border-2 ${
+                activeIndex === index ? 'border-purple-600' : 'border-purple-100 opacity-75'
+              }`}
+            >
+              <img src={image} alt="" className="h-full w-full object-cover" />
+            </button>
+          ))}
+        </div>
       )}
+    </>
+  );
+}
+
+function ProductDetailModal({ product, onClose, onAddToCart }) {
+  const images = product.images?.length ? product.images : [product.image_url].filter(Boolean);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const stock = Number(product.stock);
+  const hasStock = product.stock !== null && product.stock !== undefined && product.stock !== '' && Number.isFinite(stock);
+  const isOutOfStock = hasStock && stock <= 0;
+
+  useEffect(() => {
+    setActiveIndex(0);
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [product.id, onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-purple-950/60 p-3 backdrop-blur-sm sm:p-6"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Detalle de ${product.name}`}
+        className="relative max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Cerrar detalle del producto"
+          className="absolute right-3 top-3 z-10 rounded-full bg-white/95 p-2 text-purple-800 shadow hover:bg-purple-100"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        <div className="grid md:grid-cols-2">
+          <div className="bg-purple-50 p-4 sm:p-6">
+            <div className="relative aspect-square overflow-hidden rounded-xl bg-white">
+              {images[activeIndex] ? (
+                <img
+                  src={images[activeIndex]}
+                  alt={`${product.name} - foto ${activeIndex + 1}`}
+                  className="h-full w-full object-contain"
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-purple-400">Sin foto</div>
+              )}
+              {images.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setActiveIndex((index) => (index - 1 + images.length) % images.length)}
+                    aria-label="Ver foto anterior"
+                    className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 text-purple-800 shadow"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveIndex((index) => (index + 1) % images.length)}
+                    aria-label="Ver foto siguiente"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 text-purple-800 shadow"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
+                </>
+              )}
+            </div>
+            {images.length > 1 && (
+              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                {images.map((image, index) => (
+                  <button
+                    key={`${image}-${index}`}
+                    type="button"
+                    onClick={() => setActiveIndex(index)}
+                    aria-label={`Ver foto ${index + 1}`}
+                    aria-pressed={activeIndex === index}
+                    className={`h-14 w-14 shrink-0 overflow-hidden rounded-lg border-2 ${
+                      activeIndex === index ? 'border-purple-600' : 'border-purple-200'
+                    }`}
+                  >
+                    <img src={image} alt="" className="h-full w-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col p-6 sm:p-8">
+            <span className="mb-3 w-fit rounded-full bg-purple-100 px-3 py-1 text-xs font-semibold text-purple-800">
+              {product.category_name || 'Belleza'}
+            </span>
+            <h2 className="text-2xl font-bold text-purple-950">{product.name}</h2>
+            <p className="mt-4 flex-1 whitespace-pre-line text-sm leading-6 text-purple-700">
+              {product.description || 'Consultanos para más detalles sobre este producto.'}
+            </p>
+            <p className={`mt-5 text-sm font-medium ${isOutOfStock ? 'text-red-600' : 'text-green-700'}`}>
+              {isOutOfStock ? 'Sin stock' : hasStock ? `Stock: ${stock} unidades` : 'Stock no informado'}
+            </p>
+            <p className="mt-2 text-3xl font-bold text-purple-950">
+              ${Number(product.price).toLocaleString('es-AR')}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                onAddToCart(product);
+                onClose();
+              }}
+              disabled={isOutOfStock}
+              className="mt-5 w-full rounded-xl bg-purple-700 py-3 font-semibold text-white transition hover:bg-purple-800 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-600"
+            >
+              {isOutOfStock ? 'Sin stock' : 'Agregar al carrito'}
+            </button>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
@@ -77,6 +221,7 @@ export default function StoreView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
   const [buyerName, setBuyerName] = useState('');
   const [deliveryMethod, setDeliveryMethod] = useState('Envío a Domicilio');
   const [notes, setNotes] = useState('');
@@ -271,6 +416,14 @@ export default function StoreView() {
                   <p className="text-xs text-purple-600 line-clamp-2 mt-1 mb-2 flex-1">
                     {p.description}
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProduct(p)}
+                    className="mb-3 flex items-center gap-1.5 self-start text-xs font-semibold text-purple-700 hover:text-purple-950 hover:underline"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    Ver producto
+                  </button>
                   <p
                     className={`text-xs font-medium mb-3 ${
                       isOutOfStock
@@ -310,6 +463,14 @@ export default function StoreView() {
           })}
         </div>
       </main>
+
+      {selectedProduct && (
+        <ProductDetailModal
+          product={selectedProduct}
+          onClose={() => setSelectedProduct(null)}
+          onAddToCart={addToCart}
+        />
+      )}
 
       <a
         href={`https://wa.me/${WHATSAPP_PHONE}?text=${encodeURIComponent('Hola, tengo una consulta sobre sus productos.')}`}
