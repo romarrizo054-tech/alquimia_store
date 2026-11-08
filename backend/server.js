@@ -52,10 +52,25 @@ const databaseConfig = {
   connectionLimit: 10,
 };
 
+const isLocalDatabase = ['localhost', '127.0.0.1', '::1'].includes(
+  databaseConfig.host?.toLowerCase()
+);
+
+if (process.env.DB_SSL === 'false' && !isLocalDatabase) {
+  console.warn('DB_SSL=false se ignora para bases remotas; TiDB Cloud requiere una conexión TLS segura.');
+}
+
 if (process.env.DB_CA_PATH) {
-  databaseConfig.ssl = { ca: readFileSync(process.env.DB_CA_PATH, 'utf8') };
-} else if (process.env.DB_SSL === 'true') {
-  databaseConfig.ssl = {};
+  databaseConfig.ssl = {
+    ca: readFileSync(process.env.DB_CA_PATH, 'utf8'),
+    minVersion: 'TLSv1.2',
+    rejectUnauthorized: true
+  };
+} else if (process.env.DB_SSL === 'true' || !isLocalDatabase) {
+  databaseConfig.ssl = {
+    minVersion: 'TLSv1.2',
+    rejectUnauthorized: true
+  };
 }
 
 if (!databaseConfig.host || !databaseConfig.user || !databaseConfig.password || !databaseConfig.database) {
