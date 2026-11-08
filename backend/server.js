@@ -20,6 +20,7 @@ const imageExtensions = {
   'image/png': '.png',
   'image/webp': '.webp'
 };
+const MAX_IMAGE_SIZE_MB = 20;
 const upload = multer({
   storage: multer.diskStorage({
     destination: uploadsDirectory,
@@ -27,7 +28,7 @@ const upload = multer({
       callback(null, `${randomUUID()}${imageExtensions[file.mimetype]}`);
     }
   }),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: MAX_IMAGE_SIZE_MB * 1024 * 1024 },
   fileFilter: (req, file, callback) => {
     if (!imageExtensions[file.mimetype]) {
       callback(new Error('El formato de la imagen debe ser JPG, PNG o WebP.'));
@@ -312,7 +313,7 @@ app.use((error, req, res, next) => {
     const status = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
     res.status(status).json({
       error: status === 413
-        ? 'La imagen supera el límite de 5 MB.'
+        ? `La imagen supera el límite de ${MAX_IMAGE_SIZE_MB} MB.`
         : 'No se pudo procesar la imagen seleccionada.'
     });
     return;

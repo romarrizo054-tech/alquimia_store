@@ -489,7 +489,7 @@ export default function AdminDashboard({ onBackToStore }) {
                   className="w-full text-sm px-3.5 py-2 rounded-xl bg-purple-50/50 border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400 file:mr-3 file:rounded-lg file:border-0 file:bg-purple-100 file:px-3 file:py-1.5 file:text-purple-800"
                 />
                 <p className="mt-1 text-xs text-purple-500">
-                  Seleccioná hasta 10 imágenes JPG, PNG o WebP, de hasta 5 MB cada una.
+                  Seleccioná hasta 10 imágenes JPG, PNG o WebP, de hasta 20 MB cada una.
                   {isEditing && ' Las fotos nuevas se agregan a las actuales.'}
                 </p>
                 {(existingImages.length > 0 || imagePreviews.length > 0) && (
