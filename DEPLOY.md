@@ -8,6 +8,8 @@ En Render, abre el servicio Node y ve a **Settings > Environment**. Añade las v
 
 Para TLS, descarga el certificado CA desde el proveedor y agrégalo al proyecto en una ubicación estable, por ejemplo `backend/certs/database-ca.pem`. Define `DB_CA_PATH` con esa ruta dentro del servicio, por ejemplo `./certs/database-ca.pem` (se resuelve desde el directorio de ejecución). Si el proveedor solo requiere TLS sin CA personalizada, deja `DB_CA_PATH` vacío y usa `DB_SSL=true`.
 
+Las fotos cargadas se guardan en el disco del backend. Para conservarlas entre despliegues, configura `UPLOADS_DIR` para que apunte al directorio de un disco persistente de Render (por ejemplo `/var/data/uploads`, con un disco montado en `/var/data`). Sin almacenamiento persistente, Render elimina los archivos cargados cuando el servicio se reinicia o despliega.
+
 Configura el directorio raíz del servicio como `backend` si Render despliega desde un monorepo. El comando de inicio debe ejecutar `node server.js`; instala dependencias con `npm install`.
 
 ## Frontend (Static Site)

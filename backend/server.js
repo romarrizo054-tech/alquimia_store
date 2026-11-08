@@ -12,7 +12,7 @@ dotenv.config();
 const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 4000;
-const uploadsDirectory = fileURLToPath(new URL('./uploads/', import.meta.url));
+const uploadsDirectory = process.env.UPLOADS_DIR || fileURLToPath(new URL('./uploads/', import.meta.url));
 mkdirSync(uploadsDirectory, { recursive: true });
 
 const imageExtensions = {
@@ -106,6 +106,12 @@ function uploadedImageUrls(req) {
   return files.map((file) => `${req.protocol}://${req.get('host')}/uploads/${file.filename}`);
 }
 
+function publicImageUrl(req, imageUrl) {
+  if (!imageUrl) return imageUrl;
+  const publicOrigin = `${req.protocol}://${req.get('host')}`;
+  return imageUrl.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, publicOrigin);
+}
+
 // Endpoint para traer categorías
 app.get('/api/categories', async (req, res) => {
   try {
@@ -145,10 +151,11 @@ app.get('/api/products', async (req, res) => {
       for (const image of imageRows) {
         const productId = String(image.product_id);
         const images = extraImagesByProduct.get(productId) || [];
-        images.push(image.image_url);
+        images.push(publicImageUrl(req, image.image_url));
         extraImagesByProduct.set(productId, images);
       }
       for (const product of rows) {
+        product.image_url = publicImageUrl(req, product.image_url);
         product.images = [product.image_url, ...(extraImagesByProduct.get(String(product.id)) || [])].filter(Boolean);
       }
     }
