@@ -151,8 +151,8 @@ app.post('/api/products', upload.array('images', 10), async (req, res) => {
   try {
     await ensureProductImagesTable();
     const [result] = await pool.query(
-      `INSERT INTO products (category_id, name, description, price, cost_price, image_url, stock) 
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO products (category_id, name, description, price, cost_price, image_url, stock, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, TRUE)`,
       [category_id, name, description, price, cost_price || 0, image_url, stock || 0]
     );
     if (images.length > 1) {
