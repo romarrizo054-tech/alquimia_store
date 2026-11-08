@@ -195,7 +195,7 @@ app.put('/api/products/:id', productImageUpload, async (req, res) => {
   const { id } = req.params;
   const { category_id, name, description, price, cost_price, stock, is_active } = req.body;
   const images = uploadedImageUrls(req);
-  const image_url = req.body.image_url || images[0];
+  const image_url = images[0] || req.body.image_url;
   try {
     await ensureProductImagesTable();
     await pool.query(
@@ -204,10 +204,11 @@ app.put('/api/products/:id', productImageUpload, async (req, res) => {
        WHERE id = ?`,
       [category_id, name, description, price, cost_price, image_url, stock, is_active ?? 1, id]
     );
-    if (images.length) {
+    const additionalImages = images.slice(1);
+    if (additionalImages.length) {
       await pool.query(
         'INSERT INTO product_images (product_id, image_url) VALUES ?',
-        [images.map((url) => [id, url])]
+        [additionalImages.map((url) => [id, url])]
       );
     }
     res.json({ message: 'Producto actualizado exitosamente' });
@@ -220,10 +221,15 @@ app.put('/api/products/:id', productImageUpload, async (req, res) => {
 app.delete('/api/products/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    await ensureProductImagesTable();
-    await pool.query('DELETE FROM product_images WHERE product_id = ?', [id]);
-    await pool.query('DELETE FROM products WHERE id = ?', [id]);
-    res.json({ message: 'Producto eliminado' });
+    const [result] = await pool.query(
+      'UPDATE products SET is_active = FALSE WHERE id = ?',
+      [id]
+    );
+    if (result.affectedRows === 0) {
+      res.status(404).json({ error: 'No se encontró el producto.' });
+      return;
+    }
+    res.json({ message: 'Producto eliminado del catálogo' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

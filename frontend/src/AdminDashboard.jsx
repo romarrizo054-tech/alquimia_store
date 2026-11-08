@@ -229,12 +229,16 @@ export default function AdminDashboard({ onBackToStore }) {
     if (!window.confirm('¿Seguro que deseas eliminar este producto?')) return;
     try {
       const res = await fetch(apiUrl(`/api/products/${id}`), { method: 'DELETE' });
-      if (res.ok) {
-        setProducts((prev) => prev.filter((p) => p.id !== id));
-        loadData();
+      if (!res.ok) {
+        const result = await res.json();
+        alert(result.error || 'No se pudo eliminar el producto.');
+        return;
       }
+
+      setProducts((prev) => prev.filter((p) => p.id !== id));
+      await loadData();
     } catch (err) {
-      alert('Error eliminando producto.');
+      alert(err.message || 'No se pudo conectar con el servidor para eliminar el producto.');
     }
   };
 
@@ -688,7 +692,7 @@ export default function AdminDashboard({ onBackToStore }) {
                           <Edit3 className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => deleteProduct(p)}
+                          onClick={() => deleteProduct(p.id)}
                           className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition"
                           title="Eliminar"
                         >
