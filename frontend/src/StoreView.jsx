@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiUrl } from './api';
 import { 
   ShoppingBag, 
   Trash2, 
@@ -33,8 +34,8 @@ export default function StoreView() {
     async function fetchData() {
       try {
         const [prodRes, catRes] = await Promise.all([
-          fetch('http://localhost:4000/api/products'),
-          fetch('http://localhost:4000/api/categories')
+          fetch(apiUrl('/api/products')),
+          fetch(apiUrl('/api/categories'))
         ]);
         if (prodRes.ok && catRes.ok) {
           const prodData = await prodRes.json();

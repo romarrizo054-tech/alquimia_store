@@ -5,11 +5,12 @@ import dotenv from 'dotenv';
 import multer from 'multer';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 4000;
 const uploadsDirectory = fileURLToPath(new URL('./uploads/', import.meta.url));
 mkdirSync(uploadsDirectory, { recursive: true });
@@ -41,14 +42,27 @@ app.use(express.json());
 app.use('/uploads', express.static(uploadsDirectory));
 
 // Pool de conexiones a MySQL
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '2003',
-  database: process.env.DB_NAME || 'alquimia_beautys',
+const databaseConfig = {
+  host: process.env.DB_HOST,
+  port: Number(process.env.DB_PORT || 3306),
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
   waitForConnections: true,
   connectionLimit: 10,
-});
+};
+
+if (process.env.DB_CA_PATH) {
+  databaseConfig.ssl = { ca: readFileSync(process.env.DB_CA_PATH, 'utf8') };
+} else if (process.env.DB_SSL === 'true') {
+  databaseConfig.ssl = {};
+}
+
+if (!databaseConfig.host || !databaseConfig.user || !databaseConfig.password || !databaseConfig.database) {
+  console.warn('Faltan variables DB_HOST, DB_USER, DB_PASSWORD o DB_NAME. Configúralas en el entorno del servicio.');
+}
+
+const pool = mysql.createPool(databaseConfig);
 
 // Endpoint para traer categorías
 app.get('/api/categories', async (req, res) => {
@@ -93,7 +107,7 @@ app.get('/api/products', async (req, res) => {
 app.post('/api/products', upload.single('image'), async (req, res) => {
   const { category_id, name, description, price, cost_price, stock } = req.body;
   const image_url = req.file
-    ? `http://localhost:${PORT}/uploads/${req.file.filename}`
+    ? `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`
     : req.body.image_url;
   try {
     const [result] = await pool.query(
@@ -112,7 +126,7 @@ app.put('/api/products/:id', upload.single('image'), async (req, res) => {
   const { id } = req.params;
   const { category_id, name, description, price, cost_price, stock, is_active } = req.body;
   const image_url = req.file
-    ? `http://localhost:${PORT}/uploads/${req.file.filename}`
+    ? `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`
     : req.body.image_url;
   try {
     await pool.query(

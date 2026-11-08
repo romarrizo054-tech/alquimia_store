@@ -14,6 +14,7 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { apiUrl } from './api';
 
 export default function AdminDashboard({ onBackToStore }) {
   const navigate = useNavigate();
@@ -64,9 +65,9 @@ export default function AdminDashboard({ onBackToStore }) {
     setIsLoading(true);
     try {
       const [prodRes, catRes, metRes] = await Promise.all([
-        fetch('http://localhost:4000/api/products'),
-        fetch('http://localhost:4000/api/categories'),
-        fetch('http://localhost:4000/api/admin/metrics')
+        fetch(apiUrl('/api/products')),
+        fetch(apiUrl('/api/categories')),
+        fetch(apiUrl('/api/admin/metrics'))
       ]);
 
       if (prodRes.ok) setProducts(await prodRes.json());
@@ -115,8 +116,8 @@ export default function AdminDashboard({ onBackToStore }) {
     try {
       const method = isEditing ? 'PUT' : 'POST';
       const endpoint = isEditing 
-        ? `http://localhost:4000/api/products/${editId}`
-        : 'http://localhost:4000/api/products';
+        ? apiUrl(`/api/products/${editId}`)
+        : apiUrl('/api/products');
       const formData = new FormData();
       Object.entries(productForm).forEach(([key, value]) => formData.append(key, value));
       if (selectedImage) formData.append('image', selectedImage);
@@ -146,7 +147,7 @@ export default function AdminDashboard({ onBackToStore }) {
     if (!expenseForm.concept || !expenseForm.amount) return;
 
     try {
-      const res = await fetch('http://localhost:4000/api/admin/expenses', {
+      const res = await fetch(apiUrl('/api/admin/expenses'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(expenseForm)
@@ -196,7 +197,7 @@ export default function AdminDashboard({ onBackToStore }) {
   const deleteProduct = async (id) => {
     if (!window.confirm('¿Seguro que deseas eliminar este producto?')) return;
     try {
-      const res = await fetch(`http://localhost:4000/api/products/${id}`, { method: 'DELETE' });
+      const res = await fetch(apiUrl(`/api/products/${id}`), { method: 'DELETE' });
       if (res.ok) {
         setProducts((prev) => prev.filter((p) => p.id !== id));
         loadData();
