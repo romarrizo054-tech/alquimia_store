@@ -8,7 +8,9 @@ import {
   X, 
   Search, 
   Sparkles, 
-  MessageCircle 
+  MessageCircle,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 const WHATSAPP_PHONE = '5493834964896'; // Tu número de WhatsApp sin el +
 
@@ -18,6 +20,55 @@ const INITIAL_CATEGORIES = [
   { id: 3, name: 'Uñas & Manicura', slug: 'unas' },
   { id: 4, name: 'Cuidado Facial', slug: 'cuidado-facial' }
 ];
+
+function ProductImageGallery({ product }) {
+  const images = product.images?.length ? product.images : [product.image_url].filter(Boolean);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const activeImage = images[activeIndex] || images[0];
+
+  return (
+    <div className="relative aspect-square overflow-hidden bg-purple-50">
+      {activeImage && (
+        <img
+          src={activeImage}
+          alt={`${product.name}${images.length > 1 ? ` - foto ${activeIndex + 1}` : ''}`}
+          className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+        />
+      )}
+      {images.length > 1 && (
+        <>
+          <button
+            type="button"
+            onClick={() => setActiveIndex((index) => (index - 1 + images.length) % images.length)}
+            aria-label="Ver foto anterior"
+            className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1.5 text-purple-800 shadow hover:bg-white"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveIndex((index) => (index + 1) % images.length)}
+            aria-label="Ver foto siguiente"
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1.5 text-purple-800 shadow hover:bg-white"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+          <span className="absolute bottom-2 right-2 rounded-full bg-white/90 px-2 py-1 text-xs font-medium text-purple-800">
+            {activeIndex + 1} / {images.length}
+          </span>
+        </>
+      )}
+      <span className="absolute top-2 left-2 bg-white/90 backdrop-blur-sm text-purple-800 text-xs px-2.5 py-1 rounded-full font-medium">
+        {product.category_name}
+      </span>
+      {Number(product.stock) <= 0 && product.stock !== null && product.stock !== undefined && product.stock !== '' && (
+        <span className="absolute top-2 right-2 bg-red-600 text-white text-xs px-2.5 py-1 rounded-full font-semibold">
+          Sin stock
+        </span>
+      )}
+    </div>
+  );
+}
 
 export default function StoreView() {
   const [products, setProducts] = useState([]);
@@ -213,21 +264,7 @@ export default function StoreView() {
                 key={p.id}
                 className="bg-white rounded-2xl overflow-hidden border border-purple-100 shadow-sm hover:shadow-md transition-shadow flex flex-col group"
               >
-                <div className="relative aspect-square overflow-hidden bg-purple-50">
-                  <img
-                    src={p.image_url}
-                    alt={p.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                  <span className="absolute top-2 left-2 bg-white/90 backdrop-blur-sm text-purple-800 text-xs px-2.5 py-1 rounded-full font-medium">
-                    {p.category_name}
-                  </span>
-                  {isOutOfStock && (
-                    <span className="absolute top-2 right-2 bg-red-600 text-white text-xs px-2.5 py-1 rounded-full font-semibold">
-                      Sin stock
-                    </span>
-                  )}
-                </div>
+                <ProductImageGallery product={p} />
 
                 <div className="p-4 flex flex-col flex-1">
                   <h3 className="font-semibold text-purple-950 line-clamp-1">{p.name}</h3>

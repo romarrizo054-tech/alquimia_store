@@ -40,10 +40,11 @@ export default function AdminDashboard({ onBackToStore }) {
   // Formulario de Producto
   const [isEditing, setIsEditing] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [selectedImage, setSelectedImage] = useState(null);
-  const [imagePreview, setImagePreview] = useState('');
+  const [selectedImages, setSelectedImages] = useState([]);
+  const [imagePreviews, setImagePreviews] = useState([]);
+  const [existingImages, setExistingImages] = useState([]);
   const imageInputRef = useRef(null);
-  const imagePreviewUrlRef = useRef('');
+  const imagePreviewUrlsRef = useRef([]);
   const [productForm, setProductForm] = useState({
     name: '',
     category_id: 1,
@@ -85,31 +86,35 @@ export default function AdminDashboard({ onBackToStore }) {
   }, []);
 
   useEffect(() => () => {
-    if (imagePreviewUrlRef.current) URL.revokeObjectURL(imagePreviewUrlRef.current);
+    imagePreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
   }, []);
 
   const handleImageChange = (e) => {
-    if (imagePreviewUrlRef.current) URL.revokeObjectURL(imagePreviewUrlRef.current);
-    const file = e.target.files?.[0] || null;
-    const previewUrl = file ? URL.createObjectURL(file) : '';
-    imagePreviewUrlRef.current = previewUrl;
-    setSelectedImage(file);
-    setImagePreview(previewUrl);
+    imagePreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    const files = Array.from(e.target.files || []).slice(0, 10);
+    const previewUrls = files.map((file) => URL.createObjectURL(file));
+    imagePreviewUrlsRef.current = previewUrls;
+    setSelectedImages(files);
+    setImagePreviews(previewUrls);
+    if (e.target.files?.length > 10) {
+      alert('Puedes subir hasta 10 fotos por vez.');
+    }
   };
 
   const clearSelectedImage = () => {
-    if (imagePreviewUrlRef.current) URL.revokeObjectURL(imagePreviewUrlRef.current);
-    imagePreviewUrlRef.current = '';
-    setSelectedImage(null);
-    setImagePreview('');
+    imagePreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    imagePreviewUrlsRef.current = [];
+    setSelectedImages([]);
+    setImagePreviews([]);
+    setExistingImages([]);
     if (imageInputRef.current) imageInputRef.current.value = '';
   };
 
   // Guardar o Editar Producto
   const handleSubmitProduct = async (e) => {
     e.preventDefault();
-    if (!productForm.name || !productForm.price || (!productForm.image_url && !selectedImage)) {
-      alert('Por favor completa el nombre, el precio y selecciona una foto.');
+    if (!productForm.name || !productForm.price || (!productForm.image_url && selectedImages.length === 0)) {
+      alert('Por favor completa el nombre, el precio y selecciona al menos una foto.');
       return;
     }
 
@@ -120,7 +125,7 @@ export default function AdminDashboard({ onBackToStore }) {
         : apiUrl('/api/products');
       const formData = new FormData();
       Object.entries(productForm).forEach(([key, value]) => formData.append(key, value));
-      if (selectedImage) formData.append('image', selectedImage);
+      selectedImages.forEach((image) => formData.append('images', image));
 
       const res = await fetch(endpoint, {
         method,
@@ -176,6 +181,7 @@ export default function AdminDashboard({ onBackToStore }) {
       image_url: prod.image_url
     });
     clearSelectedImage();
+    setExistingImages(prod.images || (prod.image_url ? [prod.image_url] : []));
     window.scrollTo({ top: 350, behavior: 'smooth' });
   };
 
@@ -442,26 +448,32 @@ export default function AdminDashboard({ onBackToStore }) {
 
               <div>
                 <label className="block text-xs font-semibold text-purple-800 mb-1">
-                  Foto del producto {isEditing ? '' : '*'}
+                  Fotos del producto {isEditing ? '' : '*'}
                 </label>
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
-                  required={!isEditing && !productForm.image_url}
+                  multiple
+                  required={!isEditing && !productForm.image_url && selectedImages.length === 0}
                   ref={imageInputRef}
                   onChange={handleImageChange}
                   className="w-full text-sm px-3.5 py-2 rounded-xl bg-purple-50/50 border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400 file:mr-3 file:rounded-lg file:border-0 file:bg-purple-100 file:px-3 file:py-1.5 file:text-purple-800"
                 />
                 <p className="mt-1 text-xs text-purple-500">
-                  Elegí una imagen JPG, PNG o WebP de hasta 5 MB.
-                  {isEditing && ' Si no seleccionas otra, se conserva la foto actual.'}
+                  Seleccioná hasta 10 imágenes JPG, PNG o WebP, de hasta 5 MB cada una.
+                  {isEditing && ' Las fotos nuevas se agregan a las actuales.'}
                 </p>
-                {(imagePreview || (isEditing && productForm.image_url)) && (
-                  <img
-                    src={imagePreview || productForm.image_url}
-                    alt="Vista previa del producto"
-                    className="mt-3 h-24 w-24 rounded-xl border border-purple-200 object-cover"
-                  />
+                {(existingImages.length > 0 || imagePreviews.length > 0) && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {[...existingImages, ...imagePreviews].map((src, index) => (
+                      <img
+                        key={`${src}-${index}`}
+                        src={src}
+                        alt={`Foto ${index + 1} del producto`}
+                        className="h-20 w-20 rounded-xl border border-purple-200 object-cover"
+                      />
+                    ))}
+                  </div>
                 )}
               </div>
 

@@ -63,6 +63,29 @@ if (!databaseConfig.host || !databaseConfig.user || !databaseConfig.password || 
 }
 
 const pool = mysql.createPool(databaseConfig);
+let productImagesTablePromise;
+
+function ensureProductImagesTable() {
+  if (!productImagesTablePromise) {
+    productImagesTablePromise = pool.query(`
+      CREATE TABLE IF NOT EXISTS product_images (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        product_id BIGINT NOT NULL,
+        image_url TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_product_images_product_id (product_id)
+      )
+    `).catch((error) => {
+      productImagesTablePromise = null;
+      throw error;
+    });
+  }
+  return productImagesTablePromise;
+}
+
+function uploadedImageUrls(req) {
+  return (req.files || []).map((file) => `${req.protocol}://${req.get('host')}/uploads/${file.filename}`);
+}
 
 // Endpoint para traer categorías
 app.get('/api/categories', async (req, res) => {
@@ -93,6 +116,23 @@ app.get('/api/products', async (req, res) => {
 
     query += ' ORDER BY p.id DESC';
     const [rows] = await pool.query(query, params);
+    await ensureProductImagesTable();
+    if (rows.length) {
+      const [imageRows] = await pool.query(
+        'SELECT product_id, image_url FROM product_images WHERE product_id IN (?) ORDER BY id ASC',
+        [rows.map((product) => product.id)]
+      );
+      const extraImagesByProduct = new Map();
+      for (const image of imageRows) {
+        const productId = String(image.product_id);
+        const images = extraImagesByProduct.get(productId) || [];
+        images.push(image.image_url);
+        extraImagesByProduct.set(productId, images);
+      }
+      for (const product of rows) {
+        product.images = [product.image_url, ...(extraImagesByProduct.get(String(product.id)) || [])].filter(Boolean);
+      }
+    }
     res.json(rows);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -104,17 +144,23 @@ app.get('/api/products', async (req, res) => {
 // ==========================================
 
 // Crear producto
-app.post('/api/products', upload.single('image'), async (req, res) => {
+app.post('/api/products', upload.array('images', 10), async (req, res) => {
   const { category_id, name, description, price, cost_price, stock } = req.body;
-  const image_url = req.file
-    ? `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`
-    : req.body.image_url;
+  const images = uploadedImageUrls(req);
+  const image_url = images[0] || req.body.image_url;
   try {
+    await ensureProductImagesTable();
     const [result] = await pool.query(
       `INSERT INTO products (category_id, name, description, price, cost_price, image_url, stock) 
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [category_id, name, description, price, cost_price || 0, image_url, stock || 0]
     );
+    if (images.length > 1) {
+      await pool.query(
+        'INSERT INTO product_images (product_id, image_url) VALUES ?',
+        [images.slice(1).map((url) => [result.insertId, url])]
+      );
+    }
     res.json({ id: result.insertId, message: 'Producto creado exitosamente' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -122,19 +168,25 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
 });
 
 // Modificar producto
-app.put('/api/products/:id', upload.single('image'), async (req, res) => {
+app.put('/api/products/:id', upload.array('images', 10), async (req, res) => {
   const { id } = req.params;
   const { category_id, name, description, price, cost_price, stock, is_active } = req.body;
-  const image_url = req.file
-    ? `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`
-    : req.body.image_url;
+  const images = uploadedImageUrls(req);
+  const image_url = req.body.image_url || images[0];
   try {
+    await ensureProductImagesTable();
     await pool.query(
       `UPDATE products 
        SET category_id = ?, name = ?, description = ?, price = ?, cost_price = ?, image_url = ?, stock = ?, is_active = ?
        WHERE id = ?`,
-      [category_id, name, description, price, cost_price, image_url, stock, is_active, id]
+      [category_id, name, description, price, cost_price, image_url, stock, is_active ?? 1, id]
     );
+    if (images.length) {
+      await pool.query(
+        'INSERT INTO product_images (product_id, image_url) VALUES ?',
+        [images.map((url) => [id, url])]
+      );
+    }
     res.json({ message: 'Producto actualizado exitosamente' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -145,6 +197,8 @@ app.put('/api/products/:id', upload.single('image'), async (req, res) => {
 app.delete('/api/products/:id', async (req, res) => {
   const { id } = req.params;
   try {
+    await ensureProductImagesTable();
+    await pool.query('DELETE FROM product_images WHERE product_id = ?', [id]);
     await pool.query('DELETE FROM products WHERE id = ?', [id]);
     res.json({ message: 'Producto eliminado' });
   } catch (error) {
