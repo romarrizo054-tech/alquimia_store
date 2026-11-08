@@ -67,13 +67,21 @@ const upload = multer({
   }
 });
 
+function normalizeOrigin(value) {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return value;
+  }
+}
+
 const allowedOrigins = new Set([
-  process.env.FRONTEND_URL || 'https://alquimia-store-1.onrender.com',
-  'http://localhost:5173'
+  normalizeOrigin(process.env.FRONTEND_URL || 'https://alquimia-store-1.onrender.com'),
+  normalizeOrigin('http://localhost:5173')
 ]);
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+    if (!origin || allowedOrigins.has(normalizeOrigin(origin))) return callback(null, true);
     return callback(new Error('Este origen no está habilitado para usar la API.'));
   },
   credentials: true
@@ -161,8 +169,10 @@ function requireAdmin(req, res, next) {
 }
 
 function setAdminCookie(req, res, token) {
-  const secure = req.secure ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `${ADMIN_SESSION_COOKIE}=${encodeURIComponent(token)}; Max-Age=${ADMIN_SESSION_SECONDS}; Path=/; HttpOnly; SameSite=Lax${secure}`);
+  const secureRequest = req.secure || process.env.NODE_ENV === 'production';
+  const secure = secureRequest ? '; Secure' : '';
+  const sameSite = secureRequest ? 'None' : 'Lax';
+  res.setHeader('Set-Cookie', `${ADMIN_SESSION_COOKIE}=${encodeURIComponent(token)}; Max-Age=${ADMIN_SESSION_SECONDS}; Path=/; HttpOnly; SameSite=${sameSite}${secure}`);
 }
 
 app.get('/api/admin/session', (req, res) => {
@@ -186,8 +196,10 @@ app.post('/api/admin/login', (req, res) => {
 });
 
 app.post('/api/admin/logout', (req, res) => {
-  const secure = req.secure ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `${ADMIN_SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax${secure}`);
+  const secureRequest = req.secure || process.env.NODE_ENV === 'production';
+  const secure = secureRequest ? '; Secure' : '';
+  const sameSite = secureRequest ? 'None' : 'Lax';
+  res.setHeader('Set-Cookie', `${ADMIN_SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=${sameSite}${secure}`);
   res.json({ authenticated: false });
 });
 

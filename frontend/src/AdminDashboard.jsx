@@ -296,6 +296,11 @@ export default function AdminDashboard({ onBackToStore }) {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'No se pudo iniciar sesión.');
+      const sessionResponse = await fetch(apiUrl('/api/admin/session'), { credentials: 'include' });
+      const session = await sessionResponse.json();
+      if (!sessionResponse.ok || !session.authenticated) {
+        throw new Error('El navegador no conservó la sesión. Revisa FRONTEND_URL en el backend y vuelve a desplegar.');
+      }
       setLoginPassword('');
       setAuthStatus('authenticated');
       await loadData();
