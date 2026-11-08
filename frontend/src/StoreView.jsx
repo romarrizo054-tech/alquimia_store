@@ -97,21 +97,24 @@ export default function StoreView() {
       return;
     }
 
-    let message = `✨ *Nuevo Pedido - Alquimia Beauty's* ✨\n\n`;
-    message += `👤 *Cliente:* ${buyerName.trim()}\n`;
-    message += `📍 *Método de entrega:* ${deliveryMethod}\n`;
-    if (notes.trim()) message += `📝 *Detalles:* ${notes.trim()}\n`;
-    message += `\n🛒 *Detalle del Pedido:*\n`;
+    let message = `¡Hola, Alquimia Beauty's! ✨💜\n\n`;
+    message += `Quisiera realizar este pedido:\n`;
+    message += `━━━━━━━━━━━━━━━━━━\n`;
+    message += `👤 *Nombre:* ${buyerName.trim()}\n`;
+    message += `📦 *Entrega:* ${deliveryMethod}\n\n`;
+    message += `🛍️ *MI PEDIDO*\n`;
 
     cart.forEach((item) => {
       const subtotal = (item.price * item.quantity).toLocaleString('es-AR');
-      message += `• ${item.name} x${item.quantity} - $${subtotal}\n`;
+      message += `▫️ ${item.name} × ${item.quantity} — $${subtotal}\n`;
     });
 
-    message += `\n💰 *Total a pagar: $${totalCart.toLocaleString('es-AR')} ARS*\n\n`;
-    message += `Hola! Quisiera coordinar el pago y la entrega.`;
+    message += `━━━━━━━━━━━━━━━━━━\n`;
+    message += `💰 *TOTAL: $${totalCart.toLocaleString('es-AR')} ARS*\n\n`;
+    message += `¿Me cuentan cuáles son los medios de pago y coordinamos la entrega? 😊\n`;
+    message += `¡Muchas gracias! ✨`;
 
-    window.open(`https://wa.me/${WHATSAPP_PHONE}?text=${encodeURI(message)}`, '_blank');
+    window.open(`https://wa.me/${WHATSAPP_PHONE}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
   return (
