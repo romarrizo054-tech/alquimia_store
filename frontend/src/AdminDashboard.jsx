@@ -66,6 +66,7 @@ export default function AdminDashboard({ onBackToStore }) {
   const [selectedImages, setSelectedImages] = useState([]);
   const [imagePreviews, setImagePreviews] = useState([]);
   const [existingImages, setExistingImages] = useState([]);
+  const [productVariants, setProductVariants] = useState([]);
   const imageInputRef = useRef(null);
   const imagePreviewUrlsRef = useRef([]);
   const [productForm, setProductForm] = useState({
@@ -178,8 +179,8 @@ export default function AdminDashboard({ onBackToStore }) {
   // Guardar o Editar Producto
   const handleSubmitProduct = async (e) => {
     e.preventDefault();
-    if (!productForm.name || !productForm.price || (!productForm.image_url && selectedImages.length === 0)) {
-      alert('Por favor completa el nombre, el precio y selecciona al menos una foto.');
+    if (!productForm.name || (!productForm.price && !productVariants.length) || (!productForm.image_url && selectedImages.length === 0)) {
+      alert('Completa el nombre, un precio o las opciones, y selecciona al menos una foto.');
       return;
     }
 
@@ -190,6 +191,7 @@ export default function AdminDashboard({ onBackToStore }) {
         : apiUrl('/api/products');
       const formData = new FormData();
       Object.entries(productForm).forEach(([key, value]) => formData.append(key, value));
+      formData.append('variants', JSON.stringify(productVariants));
       selectedImages.forEach((image) => formData.append('images', image));
 
       const res = await fetch(endpoint, {
@@ -247,6 +249,13 @@ export default function AdminDashboard({ onBackToStore }) {
       stock: prod.stock,
       image_url: prod.image_url
     });
+    setProductVariants((prod.variants || []).map((variant) => ({
+      id: variant.id,
+      name: variant.name,
+      price: String(variant.price),
+      cost_price: String(variant.cost_price || 0),
+      stock: String(variant.stock)
+    })));
     clearSelectedImage();
     setExistingImages(prod.images || (prod.image_url ? [prod.image_url] : []));
     window.scrollTo({ top: 350, behavior: 'smooth' });
@@ -256,6 +265,7 @@ export default function AdminDashboard({ onBackToStore }) {
     setIsEditing(false);
     setEditId(null);
     clearSelectedImage();
+    setProductVariants([]);
     setProductForm({
       name: '',
       category_id: categories[0]?.id || 1,
@@ -597,7 +607,7 @@ export default function AdminDashboard({ onBackToStore }) {
                   <input
                     type="number"
                     step="0.01"
-                    required
+                    required={productVariants.length === 0}
                     placeholder="0.00"
                     value={productForm.price}
                     onChange={(e) => setProductForm({ ...productForm, price: e.target.value })}
@@ -617,6 +627,35 @@ export default function AdminDashboard({ onBackToStore }) {
                   />
                 </div>
               </div>
+
+              <section className="space-y-3 rounded-xl border border-purple-200 bg-purple-50/40 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-bold text-purple-950">Opciones del producto</h3>
+                    <p className="text-xs text-purple-600">Por ejemplo, tonos, colores o tamaños. Cada opción puede tener precio y stock propios.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setProductVariants((variants) => [...variants, { name: '', price: '', cost_price: '', stock: '0' }])}
+                    className="rounded-lg bg-purple-100 px-3 py-2 text-xs font-semibold text-purple-800 hover:bg-purple-200"
+                  >
+                    + Agregar opción
+                  </button>
+                </div>
+                {productVariants.length > 0 && (
+                  <div className="space-y-3">
+                    {productVariants.map((variant, index) => (
+                      <div key={index} className="grid grid-cols-1 gap-2 rounded-lg bg-white p-3 sm:grid-cols-[1.2fr_1fr_1fr_0.8fr_auto]">
+                        <input aria-label={`Nombre de opción ${index + 1}`} required type="text" placeholder="Nombre (Rosa, 50 ml…)" value={variant.name} onChange={(event) => setProductVariants((all) => all.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} className="min-w-0 rounded-lg border border-purple-200 px-3 py-2 text-sm" />
+                        <input aria-label={`Precio de opción ${index + 1}`} required type="number" min="0" step="0.01" placeholder="Precio $" value={variant.price} onChange={(event) => setProductVariants((all) => all.map((item, i) => i === index ? { ...item, price: event.target.value } : item))} className="min-w-0 rounded-lg border border-purple-200 px-3 py-2 text-sm" />
+                        <input aria-label={`Costo de opción ${index + 1}`} type="number" min="0" step="0.01" placeholder="Costo $" value={variant.cost_price} onChange={(event) => setProductVariants((all) => all.map((item, i) => i === index ? { ...item, cost_price: event.target.value } : item))} className="min-w-0 rounded-lg border border-purple-200 px-3 py-2 text-sm" />
+                        <input aria-label={`Stock de opción ${index + 1}`} required type="number" min="0" step="1" placeholder="Stock" value={variant.stock} onChange={(event) => setProductVariants((all) => all.map((item, i) => i === index ? { ...item, stock: event.target.value } : item))} className="min-w-0 rounded-lg border border-purple-200 px-3 py-2 text-sm" />
+                        <button type="button" aria-label={`Quitar opción ${index + 1}`} onClick={() => setProductVariants((all) => all.filter((_, i) => i !== index))} className="rounded-lg px-2 text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
 
               <div>
                 <label className="block text-xs font-semibold text-purple-800 mb-1">
@@ -774,7 +813,7 @@ export default function AdminDashboard({ onBackToStore }) {
                     <ul className="mt-3 space-y-1 text-sm text-purple-800">
                       {order.items.map((item, index) => (
                         <li key={`${item.product_id}-${index}`}>
-                          {item.name} × {item.quantity} — ${Number(item.subtotal).toLocaleString('es-AR')}
+                          {item.name}{item.variant_name ? ` (${item.variant_name})` : ''} × {item.quantity} — ${Number(item.subtotal).toLocaleString('es-AR')}
                         </li>
                       ))}
                     </ul>

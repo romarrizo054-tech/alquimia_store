@@ -24,6 +24,8 @@ const INITIAL_CATEGORIES = [
 
 function ProductImageGallery({ product }) {
   const images = product.images?.length ? product.images : [product.image_url].filter(Boolean);
+  const hasVariants = (product.variants || []).length > 0;
+  const hasAvailableVariant = (product.variants || []).some((variant) => Number(variant.stock) > 0);
   const [activeIndex, setActiveIndex] = useState(0);
   const activeImage = images[activeIndex] || images[0];
 
@@ -63,7 +65,7 @@ function ProductImageGallery({ product }) {
         <span className="absolute top-2 left-2 bg-white/90 backdrop-blur-sm text-purple-800 text-xs px-2.5 py-1 rounded-full font-medium">
           {product.category_name}
         </span>
-        {Number(product.stock) <= 0 && product.stock !== null && product.stock !== undefined && product.stock !== '' && (
+        {(hasVariants ? !hasAvailableVariant : Number(product.stock) <= 0 && product.stock !== null && product.stock !== undefined && product.stock !== '') && (
           <span className="absolute top-2 right-2 bg-red-600 text-white text-xs px-2.5 py-1 rounded-full font-semibold">
             Sin stock
           </span>
@@ -94,12 +96,18 @@ function ProductImageGallery({ product }) {
 function ProductDetailModal({ product, onClose, onAddToCart }) {
   const images = product.images?.length ? product.images : [product.image_url].filter(Boolean);
   const [activeIndex, setActiveIndex] = useState(0);
-  const stock = Number(product.stock);
-  const hasStock = product.stock !== null && product.stock !== undefined && product.stock !== '' && Number.isFinite(stock);
+  const variants = product.variants || [];
+  const firstAvailableVariant = variants.find((variant) => Number(variant.stock) > 0) || variants[0];
+  const [selectedVariantId, setSelectedVariantId] = useState(firstAvailableVariant?.id ? String(firstAvailableVariant.id) : '');
+  const selectedVariant = variants.find((variant) => String(variant.id) === selectedVariantId);
+  const stock = Number(selectedVariant?.stock ?? product.stock);
+  const hasStock = (selectedVariant || product.stock !== null && product.stock !== undefined && product.stock !== '') && Number.isFinite(stock);
   const isOutOfStock = hasStock && stock <= 0;
 
   useEffect(() => {
     setActiveIndex(0);
+    const firstAvailable = variants.find((variant) => Number(variant.stock) > 0) || variants[0];
+    setSelectedVariantId(firstAvailable?.id ? String(firstAvailable.id) : '');
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') onClose();
     };
@@ -190,16 +198,32 @@ function ProductDetailModal({ product, onClose, onAddToCart }) {
             <p className="mt-4 flex-1 whitespace-pre-line text-sm leading-6 text-purple-700">
               {product.description || 'Consultanos para más detalles sobre este producto.'}
             </p>
+            {variants.length > 0 && (
+              <label className="mt-5 block text-sm font-semibold text-purple-900">
+                Elegí una opción
+                <select
+                  value={selectedVariantId}
+                  onChange={(event) => setSelectedVariantId(event.target.value)}
+                  className="mt-2 w-full rounded-xl border border-purple-200 bg-white px-3 py-3 text-sm font-normal text-purple-950 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                >
+                  {variants.map((variant) => (
+                    <option key={variant.id} value={variant.id} disabled={Number(variant.stock) <= 0}>
+                      {variant.name} · ${Number(variant.price).toLocaleString('es-AR')} {Number(variant.stock) <= 0 ? '(sin stock)' : `· ${variant.stock} disponibles`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <p className={`mt-5 text-sm font-medium ${isOutOfStock ? 'text-red-600' : 'text-green-700'}`}>
               {isOutOfStock ? 'Sin stock' : hasStock ? `Stock: ${stock} unidades` : 'Stock no informado'}
             </p>
             <p className="mt-2 text-3xl font-bold text-purple-950">
-              ${Number(product.price).toLocaleString('es-AR')}
+              ${Number(selectedVariant?.price ?? product.price).toLocaleString('es-AR')}
             </p>
             <button
               type="button"
               onClick={() => {
-                onAddToCart(product);
+                onAddToCart(selectedVariant ? { ...product, ...selectedVariant, id: product.id, variant_id: selectedVariant.id, variant_name: selectedVariant.name } : product);
                 onClose();
               }}
               disabled={isOutOfStock}
@@ -248,11 +272,12 @@ export default function StoreView() {
   }, []);
 
   const addToCart = (product) => {
+    const cartKey = `${product.id}:${product.variant_id || ''}`;
     setCart((prev) => {
-      const exists = prev.find((item) => item.id === product.id);
+      const exists = prev.find((item) => `${item.id}:${item.variant_id || ''}` === cartKey);
       if (exists) {
         return prev.map((item) =>
-          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+          `${item.id}:${item.variant_id || ''}` === cartKey ? { ...item, quantity: item.quantity + 1 } : item
         );
       }
       return [...prev, { ...product, quantity: 1 }];
@@ -264,7 +289,7 @@ export default function StoreView() {
     setCart((prev) =>
       prev
         .map((item) => {
-          if (item.id === id) {
+          if (`${item.id}:${item.variant_id || ''}` === id) {
             const nextQty = item.quantity + delta;
             return nextQty > 0 ? { ...item, quantity: nextQty } : null;
           }
@@ -275,7 +300,7 @@ export default function StoreView() {
   };
 
   const removeFromCart = (id) => {
-    setCart((prev) => prev.filter((item) => item.id !== id));
+    setCart((prev) => prev.filter((item) => `${item.id}:${item.variant_id || ''}` !== id));
   };
 
   const totalCart = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
@@ -306,7 +331,7 @@ export default function StoreView() {
           customer_name: buyerName.trim(),
           delivery_method: deliveryMethod,
           notes: notes.trim(),
-          items: cart.map((item) => ({ product_id: item.id, quantity: item.quantity }))
+          items: cart.map((item) => ({ product_id: item.id, variant_id: item.variant_id || null, quantity: item.quantity }))
         })
       });
       const order = await response.json();
@@ -322,7 +347,7 @@ export default function StoreView() {
 
       order.items.forEach((item) => {
         const subtotal = Number(item.subtotal).toLocaleString('es-AR');
-        message += `▫️ ${item.name} × ${item.quantity} — $${subtotal}\n`;
+        message += `▫️ ${item.name}${item.variant_name ? ` (${item.variant_name})` : ''} × ${item.quantity} — $${subtotal}\n`;
       });
 
       message += `━━━━━━━━━━━━━━━━━━\n`;
@@ -426,13 +451,17 @@ export default function StoreView() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {filteredProducts.map((p) => {
+            const hasVariants = (p.variants || []).length > 0;
+            const availableVariants = (p.variants || []).filter((variant) => Number(variant.stock) > 0);
+            const minVariantPrice = hasVariants ? Math.min(...p.variants.map((variant) => Number(variant.price))) : Number(p.price);
+            const maxVariantPrice = hasVariants ? Math.max(...p.variants.map((variant) => Number(variant.price))) : Number(p.price);
             const stock = Number(p.stock);
             const hasStockValue =
               p.stock !== null &&
               p.stock !== undefined &&
               p.stock !== '' &&
               Number.isFinite(stock);
-            const isOutOfStock = hasStockValue && stock <= 0;
+            const isOutOfStock = hasVariants ? availableVariants.length === 0 : hasStockValue && stock <= 0;
 
             return (
               <div
@@ -466,16 +495,16 @@ export default function StoreView() {
                     {isOutOfStock
                       ? 'Sin stock'
                       : hasStockValue
-                        ? `Stock: ${stock} unidades`
+                        ? hasVariants ? `${availableVariants.length} opciones disponibles` : `Stock: ${stock} unidades`
                         : 'Stock no informado'}
                   </p>
 
                   <div className="flex items-center justify-between pt-2 border-t border-purple-50">
                     <span className="text-lg font-bold text-purple-900">
-                      ${Number(p.price).toLocaleString('es-AR')}
+                      {hasVariants && minVariantPrice !== maxVariantPrice ? `$${minVariantPrice.toLocaleString('es-AR')} – $${maxVariantPrice.toLocaleString('es-AR')}` : `$${minVariantPrice.toLocaleString('es-AR')}`}
                     </span>
                     <button
-                      onClick={() => addToCart(p)}
+                      onClick={() => hasVariants ? setSelectedProduct(p) : addToCart(p)}
                       disabled={isOutOfStock}
                       className={`text-xs font-semibold px-3 py-2 rounded-xl flex items-center gap-1.5 transition-colors ${
                         isOutOfStock
@@ -484,7 +513,7 @@ export default function StoreView() {
                       }`}
                     >
                       {!isOutOfStock && <Plus className="w-3.5 h-3.5" />}
-                      {isOutOfStock ? 'Sin stock' : 'Agregar'}
+                      {isOutOfStock ? 'Sin stock' : hasVariants ? 'Elegir opción' : 'Agregar'}
                     </button>
                   </div>
                 </div>
@@ -542,7 +571,7 @@ export default function StoreView() {
               ) : (
                 cart.map((item) => (
                   <div
-                    key={item.id}
+                    key={`${item.id}:${item.variant_id || ''}`}
                     className="flex items-center gap-3 bg-purple-50/40 p-2.5 rounded-xl border border-purple-100"
                   >
                     <img
@@ -554,13 +583,14 @@ export default function StoreView() {
                       <h4 className="text-sm font-semibold text-purple-950 truncate">
                         {item.name}
                       </h4>
+                      {item.variant_name && <p className="text-xs text-purple-600">Opción: {item.variant_name}</p>}
                       <p className="text-xs text-purple-700 font-bold mt-0.5">
                         ${Number(item.price).toLocaleString('es-AR')}
                       </p>
                       
                       <div className="flex items-center gap-2 mt-2">
                         <button
-                          onClick={() => updateQuantity(item.id, -1)}
+                          onClick={() => updateQuantity(`${item.id}:${item.variant_id || ''}`, -1)}
                           className="w-6 h-6 rounded-md bg-white border border-purple-200 flex items-center justify-center text-purple-700 hover:bg-purple-100"
                         >
                           <Minus className="w-3 h-3" />
@@ -569,8 +599,9 @@ export default function StoreView() {
                           {item.quantity}
                         </span>
                         <button
-                          onClick={() => updateQuantity(item.id, 1)}
-                          className="w-6 h-6 rounded-md bg-white border border-purple-200 flex items-center justify-center text-purple-700 hover:bg-purple-100"
+                          onClick={() => updateQuantity(`${item.id}:${item.variant_id || ''}`, 1)}
+                          disabled={item.stock !== null && item.stock !== undefined && item.stock !== '' && item.quantity >= Number(item.stock)}
+                          className="w-6 h-6 rounded-md bg-white border border-purple-200 flex items-center justify-center text-purple-700 hover:bg-purple-100 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           <Plus className="w-3 h-3" />
                         </button>
@@ -578,7 +609,7 @@ export default function StoreView() {
                     </div>
 
                     <button
-                      onClick={() => removeFromCart(item.id)}
+                      onClick={() => removeFromCart(`${item.id}:${item.variant_id || ''}`)}
                       className="text-purple-400 hover:text-red-500 p-1.5 transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />

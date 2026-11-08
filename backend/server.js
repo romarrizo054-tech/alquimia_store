@@ -128,6 +128,7 @@ if (!databaseConfig.host || !databaseConfig.user || !databaseConfig.password || 
 const pool = mysql.createPool(databaseConfig);
 let productImagesTablePromise;
 let storeOrdersTablePromise;
+let productVariantsTablePromise;
 
 function constantTimeEqual(value, expected) {
   const valueBuffer = Buffer.from(String(value));
@@ -245,6 +246,51 @@ function ensureProductImagesTable() {
   return productImagesTablePromise;
 }
 
+function ensureProductVariantsTable() {
+  if (!productVariantsTablePromise) {
+    productVariantsTablePromise = pool.query(`
+      CREATE TABLE IF NOT EXISTS product_variants (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        product_id BIGINT NOT NULL,
+        name VARCHAR(200) NOT NULL,
+        price DECIMAL(12,2) NOT NULL,
+        cost_price DECIMAL(12,2) NOT NULL DEFAULT 0,
+        stock INT NOT NULL DEFAULT 0,
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_product_variants_product_id (product_id)
+      )
+    `).catch((error) => {
+      productVariantsTablePromise = null;
+      throw error;
+    });
+  }
+  return productVariantsTablePromise;
+}
+
+function parseProductVariants(value) {
+  let variants;
+  try {
+    variants = typeof value === 'string' ? JSON.parse(value || '[]') : value || [];
+  } catch {
+    throw new Error('Las opciones del producto no tienen un formato válido.');
+  }
+  if (!Array.isArray(variants) || variants.length > 50) {
+    throw new Error('Puedes agregar hasta 50 opciones por producto.');
+  }
+  return variants.map((variant) => {
+    const name = String(variant.name || '').trim();
+    const price = Number(variant.price);
+    const costPrice = Number(variant.cost_price || 0);
+    const stock = Number(variant.stock);
+    if (!name || name.length > 200 || !Number.isFinite(price) || price < 0 || !Number.isFinite(costPrice) || costPrice < 0 || !Number.isInteger(stock) || stock < 0) {
+      throw new Error('Cada opción necesita nombre, precio, costo válido y stock entero no negativo.');
+    }
+    const id = variant.id && /^\d+$/.test(String(variant.id)) ? String(variant.id) : null;
+    return { id, name, price, cost_price: costPrice, stock };
+  });
+}
+
 async function uploadedImageUrls(req) {
   const files = Array.isArray(req.files)
     ? req.files
@@ -316,9 +362,14 @@ app.get('/api/products', async (req, res) => {
     query += ' ORDER BY p.id DESC';
     const [rows] = await pool.query(query, params);
     await ensureProductImagesTable();
+    await ensureProductVariantsTable();
     if (rows.length) {
       const [imageRows] = await pool.query(
         'SELECT product_id, image_url FROM product_images WHERE product_id IN (?) ORDER BY id ASC',
+        [rows.map((product) => product.id)]
+      );
+      const [variantRows] = await pool.query(
+        'SELECT id, product_id, name, price, cost_price, stock FROM product_variants WHERE is_active = TRUE AND product_id IN (?) ORDER BY id ASC',
         [rows.map((product) => product.id)]
       );
       const extraImagesByProduct = new Map();
@@ -328,9 +379,17 @@ app.get('/api/products', async (req, res) => {
         images.push(publicImageUrl(req, image.image_url));
         extraImagesByProduct.set(productId, images);
       }
+      const variantsByProduct = new Map();
+      for (const variant of variantRows) {
+        const productId = String(variant.product_id);
+        const variants = variantsByProduct.get(productId) || [];
+        variants.push({ ...variant, price: Number(variant.price), cost_price: Number(variant.cost_price), stock: Number(variant.stock) });
+        variantsByProduct.set(productId, variants);
+      }
       for (const product of rows) {
         product.image_url = publicImageUrl(req, product.image_url);
         product.images = [product.image_url, ...(extraImagesByProduct.get(String(product.id)) || [])].filter(Boolean);
+        product.variants = variantsByProduct.get(String(product.id)) || [];
       }
     }
     res.json(rows);
@@ -352,21 +411,39 @@ const productImageUpload = upload.fields([
 app.post('/api/products', requireAdmin, productImageUpload, async (req, res) => {
   const { category_id, name, description, price, cost_price, stock } = req.body;
   try {
+    const variants = parseProductVariants(req.body.variants);
+    const defaultPrice = price || variants[0]?.price;
+    const defaultCost = cost_price || variants[0]?.cost_price || 0;
+    const defaultStock = stock || variants[0]?.stock || 0;
+    if (!defaultPrice) throw new Error('Ingresa un precio o agrega al menos una opción con precio.');
     const images = await uploadedImageUrls(req);
     const image_url = images[0] || req.body.image_url;
     await ensureProductImagesTable();
-    const [result] = await pool.query(
-      `INSERT INTO products (category_id, name, description, price, cost_price, image_url, stock, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, TRUE)`,
-      [category_id, name, description, price, cost_price || 0, image_url, stock || 0]
-    );
-    if (images.length > 1) {
-      await pool.query(
-        'INSERT INTO product_images (product_id, image_url) VALUES ?',
-        [images.slice(1).map((url) => [result.insertId, url])]
+    await ensureProductVariantsTable();
+    const connection = await pool.getConnection();
+    let productId;
+    try {
+      await connection.beginTransaction();
+      const [result] = await connection.query(
+        `INSERT INTO products (category_id, name, description, price, cost_price, image_url, stock, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, ?, TRUE)`,
+        [category_id, name, description, defaultPrice, defaultCost, image_url, defaultStock]
       );
+      productId = result.insertId;
+      if (images.length > 1) {
+        await connection.query('INSERT INTO product_images (product_id, image_url) VALUES ?', [images.slice(1).map((url) => [productId, url])]);
+      }
+      if (variants.length) {
+        await connection.query('INSERT INTO product_variants (product_id, name, price, cost_price, stock) VALUES ?', [variants.map((variant) => [productId, variant.name, variant.price, variant.cost_price, variant.stock])]);
+      }
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
     }
-    res.json({ id: result.insertId, message: 'Producto creado exitosamente' });
+    res.json({ id: productId, message: 'Producto creado exitosamente' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -377,21 +454,43 @@ app.put('/api/products/:id', requireAdmin, productImageUpload, async (req, res) 
   const { id } = req.params;
   const { category_id, name, description, price, cost_price, stock, is_active } = req.body;
   try {
+    const variants = parseProductVariants(req.body.variants);
+    const defaultPrice = price || variants[0]?.price;
+    const defaultCost = cost_price || variants[0]?.cost_price || 0;
+    const defaultStock = stock || variants[0]?.stock || 0;
+    if (!defaultPrice) throw new Error('Ingresa un precio o agrega al menos una opción con precio.');
     const images = await uploadedImageUrls(req);
     const image_url = req.body.image_url || images[0];
     await ensureProductImagesTable();
-    await pool.query(
-      `UPDATE products 
-       SET category_id = ?, name = ?, description = ?, price = ?, cost_price = ?, image_url = ?, stock = ?, is_active = ?
-       WHERE id = ?`,
-      [category_id, name, description, price, cost_price, image_url, stock, is_active ?? 1, id]
-    );
     const additionalImages = req.body.image_url ? images : images.slice(1);
-    if (additionalImages.length) {
-      await pool.query(
-        'INSERT INTO product_images (product_id, image_url) VALUES ?',
-        [additionalImages.map((url) => [id, url])]
+    await ensureProductVariantsTable();
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.query(
+        `UPDATE products SET category_id = ?, name = ?, description = ?, price = ?, cost_price = ?, image_url = ?, stock = ?, is_active = ? WHERE id = ?`,
+        [category_id, name, description, defaultPrice, defaultCost, image_url, defaultStock, is_active ?? 1, id]
       );
+      if (additionalImages.length) await connection.query('INSERT INTO product_images (product_id, image_url) VALUES ?', [additionalImages.map((url) => [id, url])]);
+      const retainedVariantIds = variants.filter((variant) => variant.id).map((variant) => variant.id);
+      if (retainedVariantIds.length) {
+        await connection.query('UPDATE product_variants SET is_active = FALSE WHERE product_id = ? AND id NOT IN (?)', [id, retainedVariantIds]);
+      } else {
+        await connection.query('UPDATE product_variants SET is_active = FALSE WHERE product_id = ?', [id]);
+      }
+      for (const variant of variants) {
+        if (variant.id) {
+          await connection.query('UPDATE product_variants SET name = ?, price = ?, cost_price = ?, stock = ?, is_active = TRUE WHERE id = ? AND product_id = ?', [variant.name, variant.price, variant.cost_price, variant.stock, variant.id, id]);
+        } else {
+          await connection.query('INSERT INTO product_variants (product_id, name, price, cost_price, stock) VALUES (?, ?, ?, ?, ?)', [id, variant.name, variant.price, variant.cost_price, variant.stock]);
+        }
+      }
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
     }
     res.json({ message: 'Producto actualizado exitosamente' });
   } catch (error) {
@@ -431,17 +530,22 @@ app.post('/api/orders', async (req, res) => {
   const quantities = new Map();
   for (const item of requestedItems) {
     const productId = String(item.product_id || '');
+    const variantId = item.variant_id ? String(item.variant_id) : '';
     const quantity = Number(item.quantity);
-    if (!/^\d+$/.test(productId) || !Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
+    if (!/^\d+$/.test(productId) || (variantId && !/^\d+$/.test(variantId)) || !Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
       res.status(400).json({ error: 'El pedido contiene un producto o una cantidad inválida.' });
       return;
     }
-    quantities.set(productId, (quantities.get(productId) || 0) + quantity);
+    const key = `${productId}:${variantId}`;
+    const entry = quantities.get(key) || { product_id: productId, variant_id: variantId, quantity: 0 };
+    entry.quantity += quantity;
+    quantities.set(key, entry);
   }
 
   try {
     await ensureStoreOrdersTable();
-    const productIds = [...quantities.keys()];
+    await ensureProductVariantsTable();
+    const productIds = [...new Set([...quantities.values()].map((entry) => entry.product_id))];
     const [products] = await pool.query(
       'SELECT id, name, price, cost_price, stock FROM products WHERE is_active = TRUE AND id IN (?)',
       [productIds]
@@ -450,26 +554,45 @@ app.post('/api/orders', async (req, res) => {
       res.status(409).json({ error: 'Uno o más productos ya no están disponibles.' });
       return;
     }
-    const unavailableProduct = products.find((product) => {
-      const hasStockValue = product.stock !== null && product.stock !== undefined && product.stock !== '';
-      return hasStockValue && Number(product.stock) < quantities.get(String(product.id));
-    });
-    if (unavailableProduct) {
-      res.status(409).json({ error: `No hay suficiente stock de ${unavailableProduct.name}.` });
-      return;
+    const [variantRows] = await pool.query('SELECT id, product_id, name, price, cost_price, stock FROM product_variants WHERE is_active = TRUE AND product_id IN (?)', [productIds]);
+    const variantsByProduct = new Map();
+    const variantsById = new Map();
+    for (const variant of variantRows) {
+      variantsByProduct.set(String(variant.product_id), (variantsByProduct.get(String(variant.product_id)) || 0) + 1);
+      variantsById.set(String(variant.id), variant);
     }
-
-    const items = products.map((product) => {
-      const quantity = quantities.get(String(product.id));
-      return {
+    const productById = new Map(products.map((product) => [String(product.id), product]));
+    const items = [];
+    for (const entry of quantities.values()) {
+      const product = productById.get(entry.product_id);
+      const variant = entry.variant_id ? variantsById.get(entry.variant_id) : null;
+      if (variantsByProduct.has(entry.product_id) && !entry.variant_id) {
+        res.status(400).json({ error: `Selecciona una opción para ${product.name}.` });
+        return;
+      }
+      if (entry.variant_id && (!variant || String(variant.product_id) !== entry.product_id)) {
+        res.status(409).json({ error: `La opción elegida para ${product.name} ya no está disponible.` });
+        return;
+      }
+      const stockValue = variant ? variant.stock : product.stock;
+      const hasStockValue = stockValue !== null && stockValue !== undefined && stockValue !== '';
+      if (hasStockValue && Number(stockValue) < entry.quantity) {
+        res.status(409).json({ error: `No hay suficiente stock de ${product.name}${variant ? ` (${variant.name})` : ''}.` });
+        return;
+      }
+      const unitPrice = Number(variant?.price ?? product.price);
+      const unitCost = Number(variant?.cost_price ?? product.cost_price ?? 0);
+      items.push({
         product_id: product.id,
+        variant_id: variant?.id || null,
+        variant_name: variant?.name || null,
         name: product.name,
-        quantity,
-        unit_price: Number(product.price),
-        unit_cost: Number(product.cost_price || 0),
-        subtotal: Number(product.price) * quantity
-      };
-    });
+        quantity: entry.quantity,
+        unit_price: unitPrice,
+        unit_cost: unitCost,
+        subtotal: unitPrice * entry.quantity
+      });
+    }
     const total = items.reduce((sum, item) => sum + item.subtotal, 0);
     const totalCost = items.reduce((sum, item) => sum + item.unit_cost * item.quantity, 0);
     const [result] = await pool.query(
@@ -492,6 +615,7 @@ app.post('/api/orders', async (req, res) => {
 app.get('/api/admin/metrics', requireAdmin, async (req, res) => {
   try {
     await ensureStoreOrdersTable();
+    await ensureProductVariantsTable();
     // Total facturado y ganancia bruta
     const [salesRow] = await pool.query(`
       SELECT 
@@ -525,8 +649,16 @@ app.get('/api/admin/metrics', requireAdmin, async (req, res) => {
         COALESCE(SUM(stock * price), 0) AS inventory_retail_value,
         COUNT(id) AS total_products,
         SUM(CASE WHEN stock <= 3 THEN 1 ELSE 0 END) AS low_stock_count
-      FROM products WHERE is_active = TRUE
+      FROM products p WHERE is_active = TRUE
+        AND NOT EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id AND v.is_active = TRUE)
     `);
+    const [variantStockRow] = await pool.query(`
+      SELECT COALESCE(SUM(v.stock * v.cost_price), 0) AS inventory_cost_value,
+        COALESCE(SUM(v.stock * v.price), 0) AS inventory_retail_value,
+        COALESCE(SUM(CASE WHEN v.stock <= 3 THEN 1 ELSE 0 END), 0) AS low_stock_count
+      FROM product_variants v JOIN products p ON p.id = v.product_id WHERE p.is_active = TRUE AND v.is_active = TRUE
+    `);
+    const [productCountRow] = await pool.query('SELECT COUNT(*) AS total_products FROM products WHERE is_active = TRUE');
 
     const revenue = Number(salesRow[0].total_revenue) + Number(storeSalesRow[0].total_revenue);
     const costOfGoods = Number(salesRow[0].total_cost_of_goods) + Number(storeSalesRow[0].total_cost_of_goods);
@@ -543,10 +675,10 @@ app.get('/api/admin/metrics', requireAdmin, async (req, res) => {
       netProfit,
       profitMargin,
       totalOrders: Number(salesRow[0].total_orders) + Number(storeSalesRow[0].total_orders),
-      inventoryCostValue: Number(stockRow[0].inventory_cost_value),
-      inventoryRetailValue: Number(stockRow[0].inventory_retail_value),
-      totalProducts: stockRow[0].total_products,
-      lowStockCount: Number(stockRow[0].low_stock_count)
+      inventoryCostValue: Number(stockRow[0].inventory_cost_value) + Number(variantStockRow[0].inventory_cost_value),
+      inventoryRetailValue: Number(stockRow[0].inventory_retail_value) + Number(variantStockRow[0].inventory_retail_value),
+      totalProducts: Number(productCountRow[0].total_products),
+      lowStockCount: Number(stockRow[0].low_stock_count) + Number(variantStockRow[0].low_stock_count)
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -598,6 +730,17 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, async (req, res) => {
     if (status === 'completado' && order.status !== 'completado') {
       const items = JSON.parse(order.items_json);
       for (const item of items) {
+          if (item.variant_id) {
+            const [variants] = await connection.query('SELECT stock FROM product_variants WHERE id = ? AND product_id = ? FOR UPDATE', [item.variant_id, item.product_id]);
+            if (!variants.length) throw new Error(`No se encontró la opción elegida de ${item.name} al completar el pedido.`);
+            if (Number(variants[0].stock) < Number(item.quantity)) {
+              await connection.rollback();
+              res.status(409).json({ error: `No hay suficiente stock de ${item.name} (${item.variant_name}) para completar el pedido.` });
+              return;
+            }
+            await connection.query('UPDATE product_variants SET stock = stock - ? WHERE id = ?', [item.quantity, item.variant_id]);
+            continue;
+          }
         const [products] = await connection.query('SELECT stock FROM products WHERE id = ? FOR UPDATE', [item.product_id]);
         if (!products.length) throw new Error(`No se encontró ${item.name} al completar el pedido.`);
         const stock = products[0].stock;
