@@ -16,6 +16,19 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { apiUrl } from './api';
 
+async function readApiJson(response, label) {
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error(`${label}: ${response.url} devolvió HTML en lugar de JSON. Revisa VITE_API_URL en el Static Site.`);
+  }
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(`${label}: ${data.error || response.statusText}`);
+  }
+  return data;
+}
+
 export default function AdminDashboard({ onBackToStore }) {
   const navigate = useNavigate();
   
@@ -72,25 +85,18 @@ export default function AdminDashboard({ onBackToStore }) {
         fetch(apiUrl('/api/admin/metrics'))
       ]);
 
+      const results = await Promise.allSettled([
+        readApiJson(prodRes, 'Productos'),
+        readApiJson(catRes, 'Categorías'),
+        readApiJson(metRes, 'Métricas')
+      ]);
       const errors = [];
-      if (prodRes.ok) {
-        setProducts(await prodRes.json());
-      } else {
-        const error = await prodRes.json().catch(() => ({}));
-        errors.push(`Productos: ${error.error || prodRes.statusText}`);
-      }
-      if (catRes.ok) {
-        setCategories(await catRes.json());
-      } else {
-        const error = await catRes.json().catch(() => ({}));
-        errors.push(`Categorías: ${error.error || catRes.statusText}`);
-      }
-      if (metRes.ok) {
-        setMetrics(await metRes.json());
-      } else {
-        const error = await metRes.json().catch(() => ({}));
-        errors.push(`Métricas: ${error.error || metRes.statusText}`);
-      }
+      if (results[0].status === 'fulfilled') setProducts(results[0].value);
+      else errors.push(results[0].reason.message);
+      if (results[1].status === 'fulfilled') setCategories(results[1].value);
+      else errors.push(results[1].reason.message);
+      if (results[2].status === 'fulfilled') setMetrics(results[2].value);
+      else errors.push(results[2].reason.message);
       setDataError(errors.join(' · '));
     } catch (err) {
       setDataError(err.message || 'No se pudo conectar con el backend.');
