@@ -14,6 +14,7 @@ import {
   Eye
 } from 'lucide-react';
 const WHATSAPP_PHONE = '5493834964896'; // Tu número de WhatsApp sin el +
+const PRODUCTS_PER_PAGE = 6;
 
 const INITIAL_CATEGORIES = [
   { id: 1, name: 'Perfumes', slug: 'perfumes' },
@@ -267,7 +268,7 @@ export default function StoreView() {
     const controller = new AbortController();
     const timeout = setTimeout(async () => {
       setIsProductsLoading(true);
-      const params = new URLSearchParams({ page: String(productPage), limit: '12' });
+      const params = new URLSearchParams({ page: String(productPage), limit: String(PRODUCTS_PER_PAGE) });
       if (selectedCategory !== 'todos') params.set('category', selectedCategory);
       if (searchTerm.trim()) params.set('search', searchTerm.trim());
       try {
@@ -324,7 +325,7 @@ export default function StoreView() {
   const totalCart = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
   const totalCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
-  const totalPages = Math.max(1, Math.ceil(productTotal / 12));
+  const totalPages = Math.max(1, Math.ceil(productTotal / PRODUCTS_PER_PAGE));
 
   const handleCheckoutWhatsApp = async () => {
     if (!buyerName.trim()) {
