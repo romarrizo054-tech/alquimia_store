@@ -48,7 +48,13 @@ function compressProductImage(file) {
     };
     image.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      reject(new Error(`No se pudo abrir ${file.name}. Si es una foto HEIC, conviértela a JPG desde el celular y vuelve a subirla.`));
+      // Some mobile browsers expose HEIC photos with a .jpg name and JPEG MIME type.
+      // Let the server-side image host try the original before blocking the upload.
+      if (['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+        resolve(file);
+      } else {
+        reject(new Error(`No se pudo abrir ${file.name}. Guardala como JPG desde la galería del celular y vuelve a subirla.`));
+      }
     };
     image.src = objectUrl;
   });
