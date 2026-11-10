@@ -22,7 +22,7 @@ const INITIAL_CATEGORIES = [
   { id: 4, name: 'Cuidado Facial', slug: 'cuidado-facial' }
 ];
 
-function ProductImageGallery({ product }) {
+function ProductImageGallery({ product, eager = false }) {
   const images = product.images?.length ? product.images : [product.image_url].filter(Boolean);
   const hasVariants = (product.variants || []).length > 0;
   const hasAvailableVariant = (product.variants || []).some((variant) => Number(variant.stock) > 0);
@@ -36,6 +36,8 @@ function ProductImageGallery({ product }) {
           <img
             src={activeImage}
             alt={`${product.name}${images.length > 1 ? ` - foto ${activeIndex + 1}` : ''}`}
+            loading={eager ? 'eager' : 'lazy'}
+            decoding="async"
             className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
         )}
@@ -84,7 +86,7 @@ function ProductImageGallery({ product }) {
                 activeIndex === index ? 'border-purple-600' : 'border-purple-100 opacity-75'
               }`}
             >
-              <img src={image} alt="" className="h-full w-full object-cover" />
+              <img src={image} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
             </button>
           ))}
         </div>
@@ -450,7 +452,7 @@ export default function StoreView() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {filteredProducts.map((p) => {
+          {filteredProducts.map((p, index) => {
             const hasVariants = (p.variants || []).length > 0;
             const availableVariants = (p.variants || []).filter((variant) => Number(variant.stock) > 0);
             const minVariantPrice = hasVariants ? Math.min(...p.variants.map((variant) => Number(variant.price))) : Number(p.price);
@@ -468,7 +470,7 @@ export default function StoreView() {
                 key={p.id}
                 className="bg-white rounded-2xl overflow-hidden border border-purple-100 shadow-sm hover:shadow-md transition-shadow flex flex-col group"
               >
-                <ProductImageGallery product={p} />
+                <ProductImageGallery product={p} eager={index < 4} />
 
                 <div className="p-4 flex flex-col flex-1">
                   <h3 className="font-semibold text-purple-950 line-clamp-1">{p.name}</h3>

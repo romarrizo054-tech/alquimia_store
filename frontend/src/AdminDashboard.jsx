@@ -19,6 +19,41 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { apiUrl } from './api';
 
+const MAX_IMAGE_EDGE = 1600;
+
+function compressProductImage(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(image.naturalWidth * scale);
+      canvas.height = Math.round(image.naturalHeight * scale);
+      const context = canvas.getContext('2d');
+      if (!context) {
+        reject(new Error(`No se pudo procesar ${file.name}.`));
+        return;
+      }
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error(`No se pudo comprimir ${file.name}.`));
+          return;
+        }
+        const compressedFile = new File([blob], `${file.name.replace(/\.[^.]+$/, '')}.webp`, { type: 'image/webp' });
+        resolve(compressedFile.size < file.size ? compressedFile : file);
+      }, 'image/webp', 0.82);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error(`No se pudo abrir ${file.name}. Si es una foto HEIC, conviértela a JPG desde el celular y vuelve a subirla.`));
+    };
+    image.src = objectUrl;
+  });
+}
+
 async function readApiJson(response, label) {
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
@@ -64,6 +99,7 @@ export default function AdminDashboard({ onBackToStore }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editId, setEditId] = useState(null);
   const [selectedImages, setSelectedImages] = useState([]);
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [imagePreviews, setImagePreviews] = useState([]);
   const [existingImages, setExistingImages] = useState([]);
   const [productVariants, setProductVariants] = useState([]);
@@ -185,6 +221,7 @@ export default function AdminDashboard({ onBackToStore }) {
     }
 
     try {
+      setIsSavingProduct(true);
       const method = isEditing ? 'PUT' : 'POST';
       const endpoint = isEditing 
         ? apiUrl(`/api/products/${editId}`)
@@ -192,7 +229,9 @@ export default function AdminDashboard({ onBackToStore }) {
       const formData = new FormData();
       Object.entries(productForm).forEach(([key, value]) => formData.append(key, value));
       formData.append('variants', JSON.stringify(productVariants));
-      selectedImages.forEach((image) => formData.append('images', image));
+      for (const image of selectedImages) {
+        formData.append('images', await compressProductImage(image));
+      }
 
       const res = await fetch(endpoint, {
         method,
@@ -210,7 +249,9 @@ export default function AdminDashboard({ onBackToStore }) {
       resetProductForm();
       await loadData();
     } catch (err) {
-      alert('No se pudo conectar con el servidor.');
+      alert(err.message || 'No se pudo conectar con el servidor.');
+    } finally {
+      setIsSavingProduct(false);
     }
   };
 
@@ -671,7 +712,7 @@ export default function AdminDashboard({ onBackToStore }) {
                   className="w-full text-sm px-3.5 py-2 rounded-xl bg-purple-50/50 border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400 file:mr-3 file:rounded-lg file:border-0 file:bg-purple-100 file:px-3 file:py-1.5 file:text-purple-800"
                 />
                 <p className="mt-1 text-xs text-purple-500">
-                  Seleccioná hasta 10 imágenes JPG, PNG o WebP, de hasta 20 MB cada una.
+                  Seleccioná hasta 10 imágenes JPG, PNG o WebP, de hasta 20 MB cada una. Se optimizan automáticamente al publicar.
                   {isEditing && ' Las fotos nuevas se agregan a las actuales.'}
                 </p>
                 {(existingImages.length > 0 || imagePreviews.length > 0) && (
@@ -705,9 +746,10 @@ export default function AdminDashboard({ onBackToStore }) {
 
               <button
                 type="submit"
+                disabled={isSavingProduct}
                 className="w-full bg-purple-700 hover:bg-purple-800 text-white font-semibold py-2.5 rounded-xl text-sm transition-all shadow-sm"
               >
-                {isEditing ? 'Guardar Cambios del Producto' : 'Publicar Producto en Catálogo'}
+                {isSavingProduct ? 'Optimizando y guardando fotos…' : isEditing ? 'Guardar Cambios del Producto' : 'Publicar Producto en Catálogo'}
               </button>
             </form>
           </div>
