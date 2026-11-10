@@ -648,14 +648,14 @@ app.get('/api/admin/metrics', requireAdmin, async (req, res) => {
         COALESCE(SUM(stock * cost_price), 0) AS inventory_cost_value,
         COALESCE(SUM(stock * price), 0) AS inventory_retail_value,
         COUNT(id) AS total_products,
-        SUM(CASE WHEN stock <= 3 THEN 1 ELSE 0 END) AS low_stock_count
+        SUM(CASE WHEN stock = 0 THEN 1 ELSE 0 END) AS low_stock_count
       FROM products p WHERE is_active = TRUE
         AND NOT EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id AND v.is_active = TRUE)
     `);
     const [variantStockRow] = await pool.query(`
       SELECT COALESCE(SUM(v.stock * v.cost_price), 0) AS inventory_cost_value,
         COALESCE(SUM(v.stock * v.price), 0) AS inventory_retail_value,
-        COALESCE(SUM(CASE WHEN v.stock <= 3 THEN 1 ELSE 0 END), 0) AS low_stock_count
+        COALESCE(SUM(CASE WHEN v.stock = 0 THEN 1 ELSE 0 END), 0) AS low_stock_count
       FROM product_variants v JOIN products p ON p.id = v.product_id WHERE p.is_active = TRUE AND v.is_active = TRUE
     `);
     const [productCountRow] = await pool.query('SELECT COUNT(*) AS total_products FROM products WHERE is_active = TRUE');

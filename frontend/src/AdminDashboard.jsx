@@ -913,7 +913,7 @@ export default function AdminDashboard({ onBackToStore }) {
             {metrics.lowStockCount > 0 && (
               <span className="flex items-center gap-1.5 text-xs bg-amber-100 text-amber-800 px-3 py-1.5 rounded-full font-semibold">
                 <AlertTriangle className="w-3.5 h-3.5" />
-                {metrics.lowStockCount} con stock bajo
+                {metrics.lowStockCount} sin stock
               </span>
             )}
           </div>
