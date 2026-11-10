@@ -344,7 +344,10 @@ app.get('/api/categories', async (req, res) => {
 
 // Endpoint para listar productos (con filtro de categoría opcional)
 app.get('/api/products', async (req, res) => {
-  const { category } = req.query;
+  const { category, search } = req.query;
+  const isPaginated = req.query.page !== undefined || req.query.limit !== undefined;
+  const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+  const limit = Math.min(48, Math.max(1, Number.parseInt(req.query.limit, 10) || 12));
   try {
     let query = `
       SELECT p.*, c.name AS category_name, c.slug AS category_slug 
@@ -359,8 +362,26 @@ app.get('/api/products', async (req, res) => {
       params.push(category);
     }
 
+    if (search?.trim()) {
+      query += ' AND p.name LIKE ?';
+      params.push(`%${search.trim()}%`);
+    }
+
+    const [countRows] = await pool.query(
+      `SELECT COUNT(*) AS total FROM products p JOIN categories c ON p.category_id = c.id WHERE p.is_active = TRUE${category && category !== 'todos' ? ' AND c.slug = ?' : ''}${search?.trim() ? ' AND p.name LIKE ?' : ''}`,
+      params
+    );
+    const total = Number(countRows[0].total);
+
     query += ' ORDER BY p.id DESC';
-    const [rows] = await pool.query(query, params);
+    const rowsParams = [...params];
+    if (isPaginated) {
+      query += ' LIMIT ? OFFSET ?';
+      rowsParams.push(limit, (page - 1) * limit);
+    }
+    const [rows] = await pool.query(query, rowsParams);
+    res.setHeader('X-Total-Count', String(total));
+    res.setHeader('Access-Control-Expose-Headers', 'X-Total-Count');
     await ensureProductImagesTable();
     await ensureProductVariantsTable();
     if (rows.length) {

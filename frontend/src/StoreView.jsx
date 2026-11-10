@@ -242,6 +242,9 @@ function ProductDetailModal({ product, onClose, onAddToCart }) {
 
 export default function StoreView() {
   const [products, setProducts] = useState([]);
+  const [productTotal, setProductTotal] = useState(0);
+  const [productPage, setProductPage] = useState(1);
+  const [isProductsLoading, setIsProductsLoading] = useState(true);
   const [categories, setCategories] = useState(INITIAL_CATEGORIES);
   const [selectedCategory, setSelectedCategory] = useState('todos');
   const [searchTerm, setSearchTerm] = useState('');
@@ -254,24 +257,37 @@ export default function StoreView() {
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const [prodRes, catRes] = await Promise.all([
-          fetch(apiUrl('/api/products')),
-          fetch(apiUrl('/api/categories'))
-        ]);
-        if (prodRes.ok && catRes.ok) {
-          const prodData = await prodRes.json();
-          const catData = await catRes.json();
-          if (prodData.length > 0) setProducts(prodData);
-          if (catData.length > 0) setCategories(catData);
-        }
-      } catch (err) {
-        console.warn('Backend desconectado, usando catálogo de muestra.');
-      }
-    }
-    fetchData();
+    fetch(apiUrl('/api/categories'))
+      .then((response) => response.ok ? response.json() : [])
+      .then((data) => { if (data.length > 0) setCategories(data); })
+      .catch(() => console.warn('No se pudieron cargar las categorías.'));
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeout = setTimeout(async () => {
+      setIsProductsLoading(true);
+      const params = new URLSearchParams({ page: String(productPage), limit: '12' });
+      if (selectedCategory !== 'todos') params.set('category', selectedCategory);
+      if (searchTerm.trim()) params.set('search', searchTerm.trim());
+      try {
+        const response = await fetch(apiUrl(`/api/products?${params}`), { signal: controller.signal });
+        if (!response.ok) throw new Error('No se pudieron cargar los productos.');
+        const data = await response.json();
+        setProducts(data);
+        setProductTotal(Number(response.headers.get('X-Total-Count')) || data.length);
+      } catch (error) {
+        if (error.name !== 'AbortError') console.warn('No se pudieron cargar los productos.', error);
+      } finally {
+        if (!controller.signal.aborted) setIsProductsLoading(false);
+      }
+    }, searchTerm.trim() ? 250 : 0);
+
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [productPage, searchTerm, selectedCategory]);
 
   const addToCart = (product) => {
     const cartKey = `${product.id}:${product.variant_id || ''}`;
@@ -308,12 +324,7 @@ export default function StoreView() {
   const totalCart = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
   const totalCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
-  const filteredProducts = products.filter((p) => {
-    const matchesCategory =
-      selectedCategory === 'todos' || p.category_slug === selectedCategory;
-    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
+  const totalPages = Math.max(1, Math.ceil(productTotal / 12));
 
   const handleCheckoutWhatsApp = async () => {
     if (!buyerName.trim()) {
@@ -415,7 +426,7 @@ export default function StoreView() {
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-8">
           <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 scrollbar-none">
             <button
-              onClick={() => setSelectedCategory('todos')}
+              onClick={() => { setSelectedCategory('todos'); setProductPage(1); }}
               className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
                 selectedCategory === 'todos'
                   ? 'bg-purple-700 text-white shadow-sm'
@@ -427,7 +438,7 @@ export default function StoreView() {
             {categories.map((c) => (
               <button
                 key={c.id}
-                onClick={() => setSelectedCategory(c.slug)}
+                onClick={() => { setSelectedCategory(c.slug); setProductPage(1); }}
                 className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
                   selectedCategory === c.slug
                     ? 'bg-purple-700 text-white shadow-sm'
@@ -445,14 +456,18 @@ export default function StoreView() {
               type="text"
               placeholder="Buscar producto..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setSearchTerm(e.target.value); setProductPage(1); }}
               className="w-full pl-9 pr-4 py-2 bg-white rounded-full text-sm border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400 text-purple-950 placeholder-purple-300"
             />
           </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {filteredProducts.map((p, index) => {
+          {isProductsLoading ? (
+            <p className="col-span-full py-12 text-center text-purple-600">Cargando productos…</p>
+          ) : products.length === 0 ? (
+            <p className="col-span-full py-12 text-center text-purple-600">No encontramos productos con esa búsqueda.</p>
+          ) : products.map((p, index) => {
             const hasVariants = (p.variants || []).length > 0;
             const availableVariants = (p.variants || []).filter((variant) => Number(variant.stock) > 0);
             const minVariantPrice = hasVariants ? Math.min(...p.variants.map((variant) => Number(variant.price))) : Number(p.price);
@@ -523,6 +538,28 @@ export default function StoreView() {
             );
           })}
         </div>
+
+        {totalPages > 1 && (
+          <nav aria-label="Páginas del catálogo" className="mt-8 flex items-center justify-center gap-4">
+            <button
+              type="button"
+              onClick={() => { setProductPage((page) => Math.max(1, page - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+              disabled={productPage === 1 || isProductsLoading}
+              className="rounded-xl border border-purple-200 bg-white px-4 py-2 text-sm font-semibold text-purple-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Anterior
+            </button>
+            <span className="text-sm text-purple-700">Página {productPage} de {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => { setProductPage((page) => Math.min(totalPages, page + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+              disabled={productPage >= totalPages || isProductsLoading}
+              className="rounded-xl border border-purple-200 bg-white px-4 py-2 text-sm font-semibold text-purple-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Siguiente
+            </button>
+          </nav>
+        )}
       </main>
 
       {selectedProduct && (
