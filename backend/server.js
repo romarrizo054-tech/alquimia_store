@@ -481,17 +481,42 @@ app.put('/api/products/:id', requireAdmin, productImageUpload, async (req, res) 
     const defaultStock = stock || variants[0]?.stock || 0;
     if (!defaultPrice) throw new Error('Ingresa un precio o agrega al menos una opción con precio.');
     const images = await uploadedImageUrls(req);
-    const image_url = req.body.image_url || images[0];
+    const hasImageSelection = Object.hasOwn(req.body, 'existing_images');
+    let retainedImages = [];
+    if (hasImageSelection) {
+      retainedImages = JSON.parse(req.body.existing_images);
+      if (!Array.isArray(retainedImages) || retainedImages.some((url) => typeof url !== 'string')) {
+        throw new Error('La lista de fotos del producto no es válida.');
+      }
+    }
     await ensureProductImagesTable();
-    const additionalImages = req.body.image_url ? images : images.slice(1);
     await ensureProductVariantsTable();
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
+      let imageUrl = req.body.image_url || images[0] || '';
+      let additionalImages = req.body.image_url ? images : images.slice(1);
+      if (hasImageSelection) {
+        const [currentProducts] = await connection.query('SELECT image_url FROM products WHERE id = ? FOR UPDATE', [id]);
+        if (!currentProducts.length) throw new Error('No se encontró el producto que quieres editar.');
+        const [currentExtraImages] = await connection.query('SELECT image_url FROM product_images WHERE product_id = ?', [id]);
+        const currentImageUrls = new Set(
+          [currentProducts[0].image_url, ...currentExtraImages.map((row) => row.image_url)]
+            .filter(Boolean)
+            .map((url) => publicImageUrl(req, url))
+        );
+        if (retainedImages.some((url) => !currentImageUrls.has(url))) {
+          throw new Error('Una de las fotos seleccionadas ya no pertenece a este producto. Recarga el panel e intenta nuevamente.');
+        }
+        const allImages = [...new Set([...retainedImages, ...images])];
+        imageUrl = allImages[0] || '';
+        additionalImages = allImages.slice(1);
+      }
       await connection.query(
         `UPDATE products SET category_id = ?, name = ?, description = ?, price = ?, cost_price = ?, image_url = ?, stock = ?, is_active = ? WHERE id = ?`,
-        [category_id, name, description, defaultPrice, defaultCost, image_url, defaultStock, is_active ?? 1, id]
+        [category_id, name, description, defaultPrice, defaultCost, imageUrl, defaultStock, is_active ?? 1, id]
       );
+      if (hasImageSelection) await connection.query('DELETE FROM product_images WHERE product_id = ?', [id]);
       if (additionalImages.length) await connection.query('INSERT INTO product_images (product_id, image_url) VALUES ?', [additionalImages.map((url) => [id, url])]);
       const retainedVariantIds = variants.filter((variant) => variant.id).map((variant) => variant.id);
       if (retainedVariantIds.length) {

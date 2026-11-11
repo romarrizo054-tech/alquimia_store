@@ -218,10 +218,27 @@ export default function AdminDashboard({ onBackToStore }) {
     if (imageInputRef.current) imageInputRef.current.value = '';
   };
 
+  const removeSavedImage = (imageUrl) => {
+    const remaining = existingImages.filter((image) => image !== imageUrl);
+    setExistingImages(remaining);
+    setProductForm((form) => ({ ...form, image_url: form.image_url === imageUrl ? (remaining[0] || '') : form.image_url }));
+  };
+
+  const removeSelectedImage = (index) => {
+    const previewUrl = imagePreviews[index];
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      imagePreviewUrlsRef.current = imagePreviewUrlsRef.current.filter((url) => url !== previewUrl);
+    }
+    setSelectedImages((images) => images.filter((_, imageIndex) => imageIndex !== index));
+    setImagePreviews((previews) => previews.filter((_, imageIndex) => imageIndex !== index));
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  };
+
   // Guardar o Editar Producto
   const handleSubmitProduct = async (e) => {
     e.preventDefault();
-    if (!productForm.name || (!productForm.price && !productVariants.length) || (!productForm.image_url && selectedImages.length === 0)) {
+    if (!productForm.name || (!productForm.price && !productVariants.length) || (!isEditing && !productForm.image_url && selectedImages.length === 0)) {
       alert('Completa el nombre, un precio o las opciones, y selecciona al menos una foto.');
       return;
     }
@@ -235,6 +252,7 @@ export default function AdminDashboard({ onBackToStore }) {
       const formData = new FormData();
       Object.entries(productForm).forEach(([key, value]) => formData.append(key, value));
       formData.append('variants', JSON.stringify(productVariants));
+      if (isEditing) formData.append('existing_images', JSON.stringify(existingImages));
       for (const image of selectedImages) {
         formData.append('images', await compressProductImage(image));
       }
@@ -723,13 +741,21 @@ export default function AdminDashboard({ onBackToStore }) {
                 </p>
                 {(existingImages.length > 0 || imagePreviews.length > 0) && (
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {[...existingImages, ...imagePreviews].map((src, index) => (
-                      <img
-                        key={`${src}-${index}`}
-                        src={src}
-                        alt={`Foto ${index + 1} del producto`}
-                        className="h-20 w-20 rounded-xl border border-purple-200 object-cover"
-                      />
+                    {existingImages.map((src, index) => (
+                      <div key={`saved-${src}`} className="relative">
+                        <img src={src} alt={`Foto guardada ${index + 1}`} className="h-20 w-20 rounded-xl border border-purple-200 object-cover" />
+                        <button type="button" onClick={() => removeSavedImage(src)} aria-label={`Eliminar foto guardada ${index + 1}`} title="Eliminar foto" className="absolute -right-2 -top-2 rounded-full bg-red-600 p-1 text-white shadow hover:bg-red-700">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    {imagePreviews.map((src, index) => (
+                      <div key={`new-${src}`} className="relative">
+                        <img src={src} alt={`Foto nueva ${index + 1}`} className="h-20 w-20 rounded-xl border border-purple-200 object-cover" />
+                        <button type="button" onClick={() => removeSelectedImage(index)} aria-label={`Quitar foto nueva ${index + 1}`} title="Quitar foto" className="absolute -right-2 -top-2 rounded-full bg-red-600 p-1 text-white shadow hover:bg-red-700">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}
